@@ -9,7 +9,7 @@ import java.util.List;
 
 /** Full emote menu: grid of all emotes, live preview, favourites and the "use" action. */
 public final class EmoteMenuScreen extends Screen {
-    private static final int COLS = 5, GAP = 3;
+    private static final int COLS = 6, GAP = 3;
     private int TILE_W = 46, TILE_H = 48;
     private static String lastSelected;
     private final Screen parent;
