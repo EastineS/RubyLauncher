@@ -15,6 +15,22 @@ import java.util.Map;
 public final class EmoteRenderTypes extends RenderType {
     private static final Map<ResourceLocation, RenderType> ADD = new HashMap<>();
     private static final Map<ResourceLocation, RenderType> NORMAL = new HashMap<>();
+    private static final Map<ResourceLocation, RenderType> LIT = new HashMap<>();
+
+    /** Marks painted on the head (blush, tears): lit like skin, nudged toward the camera to avoid z-fighting. */
+    public static RenderType lit(ResourceLocation tex) {
+        return LIT.computeIfAbsent(tex, t -> create("rubycon_emote_lit", DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 256,
+                true, true, CompositeState.builder()
+                        .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                        .setTextureState(new TextureStateShard(t, false, false))
+                        .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                        .setCullState(NO_CULL)
+                        .setLightmapState(LIGHTMAP)
+                        .setOverlayState(OVERLAY)
+                        .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                        .setWriteMaskState(COLOR_WRITE)
+                        .createCompositeState(false)));
+    }
 
     public static RenderType additive(ResourceLocation tex) {
         return ADD.computeIfAbsent(tex, t -> create("rubycon_emote_add", DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 256,
