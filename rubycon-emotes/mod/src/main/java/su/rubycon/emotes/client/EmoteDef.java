@@ -62,12 +62,17 @@ public final class EmoteDef {
         this.color = color; this.layers = layers; this.icon = icon;
     }
 
+    // Workload limits: definitions come from resource packs, so every value that drives a loop is bounded here.
+    static final int MAX_LAYERS = 64, MAX_COUNT = 64, MAX_TIMES = 32, MAX_KEYS = 64;
+    static final float MAX_RATE = 40, MIN_LIFE = 0.05f, MAX_LIFE = 8, MIN_EVERY = 0.05f;
+
     // ------------------------------------------------------------------ parsing
     static EmoteDef parse(String ns, String id, JsonObject o) {
         List<Layer> layers = new ArrayList<>();
         JsonArray arr = o.getAsJsonArray("layers");
         int li = 0;
         if (arr != null) for (JsonElement el : arr) {
+            if (layers.size() >= MAX_LAYERS) break;
             layers.add(layer(ns, el.getAsJsonObject(), li++));
         }
         return new EmoteDef(id, clamp(f(o, "duration", 4), 0.5f, 30f), f(o, "fade_in", 0.3f), f(o, "fade_out", 0.4f),
@@ -119,12 +124,16 @@ public final class EmoteDef {
         }
         if (emitter) {
             l.seed = o.has("seed") ? o.get("seed").getAsInt() : 17 + index * 31;
-            l.count = o.has("count") ? o.get("count").getAsInt() : 6;
-            l.rate = f(o, "rate", 5); l.every = f(o, "every", -1);
+            l.count = o.has("count") ? Math.max(0, Math.min(MAX_COUNT, o.get("count").getAsInt())) : 6;
+            l.rate = clamp(f(o, "rate", 5), 0, MAX_RATE);
+            l.every = f(o, "every", -1);
+            if (l.every > 0) l.every = Math.max(MIN_EVERY, l.every);
             l.dir = f(o, "dir", 0); l.spread = f(o, "spread", 360); l.gravity = f(o, "gravity", 0);
             l.grow = f(o, "grow", 2); l.stretch = f(o, "stretch", 0); l.rotJitter = f(o, "rot_jitter", 0);
             l.omega = f(o, "omega", 90);
-            l.life = vec(o, "life", l.life, 2); l.speed = vec(o, "speed", l.speed, 2); l.box = vec(o, "box", l.box, 2);
+            l.life = vec(o, "life", l.life, 2);
+            l.life[0] = clamp(l.life[0], MIN_LIFE, MAX_LIFE); l.life[1] = clamp(l.life[1], l.life[0], MAX_LIFE);
+            l.speed = vec(o, "speed", l.speed, 2); l.box = vec(o, "box", l.box, 2);
             if (o.has("spin") && o.get("spin").isJsonArray()) l.spinR = vec(o, "spin", l.spinR, 2);
             l.wobble = vec(o, "wobble", l.wobble, 2);
             if (o.has("radius")) {
@@ -132,6 +141,7 @@ public final class EmoteDef {
                 l.radius = new float[]{r[0], r.length > 1 ? r[1] : r[0], r.length > 2 ? r[2] : 0};
             }
             l.times = o.has("times") ? arr(o, "times") : new float[0];
+            if (l.times.length > MAX_TIMES) l.times = java.util.Arrays.copyOf(l.times, MAX_TIMES);
             l.curve = switch (str(o, "curve", "pop")) {
                 case "flash" -> Curve.FLASH; case "grow" -> Curve.GROW; case "shrink" -> Curve.SHRINK; case "fade" -> Curve.FADE;
                 default -> Curve.POP;
@@ -157,7 +167,9 @@ public final class EmoteDef {
         return new Track(t, v, e);
     }
 
-    private static float f(JsonObject o, String k, float d) { return o.has(k) ? o.get(k).getAsFloat() : d; }
+    private static float f(JsonObject o, String k, float d) { return o.has(k) ? finite(o.get(k).getAsFloat(), d) : d; }
+
+    private static float finite(float v, float d) { return Float.isFinite(v) ? v : d; }
     private static boolean b(JsonObject o, String k) { return o.has(k) && o.get(k).getAsBoolean(); }
     private static String str(JsonObject o, String k, String d) { return o.has(k) ? o.get(k).getAsString() : d; }
     private static float clamp(float v, float a, float b) { return Math.max(a, Math.min(b, v)); }
@@ -165,8 +177,8 @@ public final class EmoteDef {
     private static float[] arr(JsonObject o, String k) {
         if (!o.has(k)) return null;
         JsonArray a = o.getAsJsonArray(k);
-        float[] out = new float[a.size()];
-        for (int i = 0; i < out.length; i++) out[i] = a.get(i).getAsFloat();
+        float[] out = new float[Math.min(a.size(), MAX_KEYS)];
+        for (int i = 0; i < out.length; i++) out[i] = finite(a.get(i).getAsFloat(), 0);
         return out;
     }
 
