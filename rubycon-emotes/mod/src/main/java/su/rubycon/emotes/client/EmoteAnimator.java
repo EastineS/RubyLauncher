@@ -20,7 +20,7 @@ public final class EmoteAnimator {
         public net.minecraft.resources.ResourceLocation tex;
         public Blend blend;
         public Anchor anchor;
-        public boolean billboard, flip;
+        public boolean billboard, flip, lit;
         public float px, py, pz, ox, oy, w, h, rot, pvx, pvy, r, g, b, a;
     }
 
@@ -128,6 +128,7 @@ public final class EmoteAnimator {
         q.tex = glow ? l.glowTex : l.tex;
         q.blend = glow ? Blend.ADD : l.blend;
         q.anchor = anchor; q.billboard = billboard; q.flip = flip;
+        q.lit = !glow && l.lit;
         q.px = px; q.py = py; q.pz = pz; q.ox = ox; q.oy = oy; q.w = w; q.h = h; q.rot = rot;
         q.pvx = pvx; q.pvy = pvy;
         q.r = col[0]; q.g = col[1]; q.b = col[2]; q.a = a * col[3];
@@ -247,9 +248,10 @@ public final class EmoteAnimator {
                 float py = e.pos[1] + e.radius[2] * (float) Math.sin(ang * 2);
                 float[] col = e.colors[j % e.colors.length];
                 float rr = e.spinR[0] * lt + j * 40;
+                float ox = e.offset[0] * sc, oy = e.offset[1] * sc;
                 if (e.glow > 0)
-                    emit(out, e, true, e.anchor, bill, px, py, pz, 0, 0, sz * GLOW_PAD * sc, sz * GLOW_PAD * sc, rr, col, e.alpha * fade * e.glow, false, 0, 0);
-                emit(out, e, false, e.anchor, bill, px, py, pz, 0, 0, sz * sc, sz * sc, rr, col, e.alpha * fade, false, 0, 0);
+                    emit(out, e, true, e.anchor, bill, px, py, pz, ox, oy, sz * GLOW_PAD * sc, sz * GLOW_PAD * sc, rr, col, e.alpha * fade * e.glow, false, 0, 0);
+                emit(out, e, false, e.anchor, bill, px, py, pz, ox, oy, sz * sc, sz * sc, rr, col, e.alpha * fade, false, 0, 0);
             }
             return;
         }
@@ -304,7 +306,7 @@ public final class EmoteAnimator {
         int m = (e.mirror && i % 2 == 1) ? -1 : 1;
         float a = e.alpha * amul;
         float qpx, qpy, qpz, qox, qoy;
-        if (bill && e.screen) { qpx = e.pos[0] * m; qpy = e.pos[1]; qpz = e.pos[2]; qox = px * m * sc; qoy = py * sc; }
+        if (bill && e.screen) { qpx = e.pos[0] * m; qpy = e.pos[1]; qpz = e.pos[2]; qox = (px + e.offset[0]) * m * sc; qoy = (py + e.offset[1]) * sc; }
         else { qpx = e.pos[0] * m + px * m; qpy = e.pos[1] + py; qpz = e.pos[2]; qox = 0; qoy = 0; }
         if (e.glow > 0)
             emit(out, e, true, e.anchor, bill, qpx, qpy, qpz, qox, qoy, w * GLOW_PAD * sc, h * GLOW_PAD * sc, rr * m, col, a * e.glow, m < 0, 0, 0);
