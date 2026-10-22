@@ -251,6 +251,7 @@ def eval_emitter(e, t, opts, out, ei):
     wob = e.get("wobble", [0, 0])
     alpha0 = e.get("alpha", 1.0)
     glow = e.get("glow", 0.0)
+    eoff = e.get("offset", [0, 0])
     sc = opts.scale if billboard else 1.0
     spawns = []
     if mode == "stream":
@@ -289,9 +290,10 @@ def eval_emitter(e, t, opts, out, ei):
                 py = pos[1] + (r[2] if len(r) > 2 else 0) * math.sin(ang * 2)
                 col = colors[j % len(colors)]
                 rr = spin[0] * lt + j * 40
+                qo = [eoff[0] * sc, eoff[1] * sc]
                 if glow > 0:
-                    out.append(quad(tex + "_glow", "add", anchor, [px, py, pz], [0, 0], sz * GLOW_PAD * sc, sz * GLOW_PAD * sc, rr, col, alpha0 * fade * glow))
-                out.append(quad(tex, blend, anchor, [px, py, pz], [0, 0], sz * sc, sz * sc, rr, col, alpha0 * fade, billboard=True))
+                    out.append(quad(tex + "_glow", "add", anchor, [px, py, pz], qo, sz * GLOW_PAD * sc, sz * GLOW_PAD * sc, rr, col, alpha0 * fade * glow))
+                out.append(quad(tex, blend, anchor, [px, py, pz], qo, sz * sc, sz * sc, rr, col, alpha0 * fade, billboard=True))
         return
     for (i, t0) in spawns:
         if t0 < start - 1e-6 or t0 > end + 1e-6:
@@ -325,7 +327,7 @@ def eval_emitter(e, t, opts, out, ei):
         m = -1 if (mirror and i % 2 == 1) else 1
         a = alpha0 * amul
         if billboard and e.get("screen", True):
-            qp, qo = [pos[0] * m, pos[1], pos[2]], [px * m * sc, py * sc]
+            qp, qo = [pos[0] * m, pos[1], pos[2]], [(px + eoff[0]) * m * sc, (py + eoff[1]) * sc]
         else:
             qp, qo = [pos[0] * m + px * m, pos[1] + py, pos[2]], [0, 0]
         if glow > 0:

@@ -39,9 +39,10 @@ public final class EmotePreview {
             Ui.icon(g, id, x + w / 2 - 32, y + h / 2 - 32, 64, 1);
             return;
         }
-        // bust framing: effects reach ~1.2 blocks above and ~0.9 beside the head centre
-        int scale = Math.max(12, (int) (Math.min(w, h * 1.1f) / 1.9f));
-        int feetY = (int) (y + h * 0.66f + 1.62f * scale);
+        // waist-up framing with the head left of centre: the emblem floats at the upper right
+        int scale = Math.max(12, (int) Math.min(h * 0.55f, w / 1.35f));
+        int feetY = (int) (y + h * 0.42f + 1.75f * scale);
+        int footX = x + (int) (w * 0.4f);
         ItemStack oldHelmet = p.getInventory().armor.get(3);
         float bodyRot = p.yBodyRot, yRot = p.getYRot(), xRot = p.getXRot(), head = p.yHeadRot, headO = p.yHeadRotO, bodyO = p.yBodyRotO;
         g.enableScissor(x + 1, y + 1, x + w - 1, y + h - 1);
@@ -57,7 +58,7 @@ public final class EmotePreview {
             Quaternionf pose = new Quaternionf().rotateZ((float) Math.PI);
             Quaternionf cam = new Quaternionf().rotateX((float) Math.toRadians(pitch));
             pose.mul(cam);
-            InventoryScreen.renderEntityInInventory(g, x + w / 2, feetY, scale, pose, cam, p);
+            InventoryScreen.renderEntityInInventory(g, footX, feetY, scale, pose, cam, p);
         } finally {
             p.getInventory().armor.set(3, oldHelmet);
             p.yBodyRot = bodyRot; p.yBodyRotO = bodyO; p.setYRot(yRot); p.setXRot(xRot); p.yHeadRot = head; p.yHeadRotO = headO;
