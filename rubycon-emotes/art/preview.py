@@ -58,7 +58,7 @@ def make_skin():
         x0, y0, w, h = rect
         for y in range(h):
             for x in range(w):
-                px[x0 + x, y0 + y] = fn(x, y, w, h) + (255,)
+                px[x0 + x, y0 + y] = (*fn(x, y, w, h), 255)
 
     head = uv_faces(0, 0, 8, 8, 8)
     paint(head["top"], lambda x, y, w, h: C["hair_l"] if (x + 2 * y) % 7 == 0 else C["hair"])
@@ -77,7 +77,8 @@ def make_skin():
             return C["lip"]
         return C["skin"]
     paint(head["front"], face)
-    side = lambda x, y, w, h: (C["hair"] if (x + y) % 3 else C["hair_d"]) if y < 3 or (y < 7 and x < 3) else C["skin_d"]
+    def side(x, y, w, h):
+        return (C["hair"] if (x + y) % 3 else C["hair_d"]) if y < 3 or (y < 7 and x < 3) else C["skin_d"]
     paint(head["right"], side)
     paint(head["left"], lambda x, y, w, h: side(7 - x, y, w, h))
     paint(head["back"], lambda x, y, w, h: C["hair_d"] if (x * 2 + y) % 5 == 0 else C["hair"])
@@ -95,7 +96,7 @@ def make_skin():
     body = uv_faces(16, 16, 8, 12, 4)
     paint(body["front"], coat_front)
     for f in ("back", "right", "left", "top", "bottom"):
-        paint(body[f], lambda x, y, w, h: C["belt"] if y == 7 and f != "top" and f != "bottom" else C["coat_d"] if f == "back" and x in (3, 4) else C["coat"])
+        paint(body[f], lambda x, y, w, h, f=f: C["belt"] if y == 7 and f != "top" and f != "bottom" else C["coat_d"] if f == "back" and x in (3, 4) else C["coat"])
 
     def arm(x, y, w, h):
         if h == 4:
@@ -106,7 +107,7 @@ def make_skin():
             return C["gold"]
         return C["coat_l"] if x == 1 and y < 8 else C["coat"]
     for u, v in ((40, 16), (32, 48)):
-        for f, r in uv_faces(u, v, 4, 12, 4).items():
+        for r in uv_faces(u, v, 4, 12, 4).values():
             paint(r, arm)
 
     def leg(x, y, w, h):
@@ -116,7 +117,7 @@ def make_skin():
             return C["boot"] if y < 11 else C["boot_d"]
         return C["pants"]
     for u, v in ((0, 16), (16, 48)):
-        for f, r in uv_faces(u, v, 4, 12, 4).items():
+        for r in uv_faces(u, v, 4, 12, 4).values():
             paint(r, leg)
     return img
 
@@ -197,7 +198,7 @@ class Frame:
 
 
 def draw_player(fr, cam):
-    for name, lo, hi, (u, v) in BOXES:
+    for _name, lo, hi, (u, v) in BOXES:
         w, h, d = hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]
         for face, rect in uv_faces(u, v, w, h, d).items():
             a, b, c = face_corners(lo, hi, face)

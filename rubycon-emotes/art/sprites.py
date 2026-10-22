@@ -637,13 +637,14 @@ SIGNS = {"s_excl": sign_excl, "s_quest": sign_quest, "s_heart": sign_heart, "s_n
 
 # ------------------------------------------------------------ additive white fx
 def fx_out(c, a):
-    c.rgba = np.concatenate([np.ones(a.shape + (3,), np.float32) * a[..., None], a[..., None]], -1).astype(np.float32)
+    c.rgba = np.concatenate([np.ones((*a.shape, 3), np.float32) * a[..., None], a[..., None]], -1).astype(np.float32)
 
 
 def fx_sparkle(c):
     r = np.hypot(c.x, c.y)
     ax, ay = np.abs(c.x), np.abs(c.y)
-    w = lambda t: 0.012 + 0.045 * (1 - np.clip(t, 0, 1)) ** 3
+    def w(t):
+        return 0.012 + 0.045 * (1 - np.clip(t, 0, 1)) ** 3
     rays = np.maximum(np.exp(-(ay / w(ax)) ** 2) * (1 - np.clip(ax, 0, 1)) ** 1.6,
                       np.exp(-(ax / w(ay)) ** 2) * (1 - np.clip(ay, 0, 1)) ** 1.6)
     core = np.exp(-(r / 0.06) ** 2) + 0.45 * np.exp(-(r / 0.2) ** 2)
@@ -679,7 +680,8 @@ def save(img, sub_, name):
 
 
 def main(only=None):
-    want = lambda n: not only or n in only
+    def want(n):
+        return not only or n in only
     if want("bubble"):
         c = Canvas(*FRAME)
         bubble(c)
