@@ -34,6 +34,8 @@ public final class EmoteDef {
         public float[][] colors = {{1, 1, 1, 1}};
         public float alpha = 1, rot = 0, glow = 0, start = 0, end = 1e9f;
         public boolean mirror, flip;
+        /** world-lit (face/head marks) rather than full-bright */
+        public boolean lit;
         // part modifiers (null = absent)
         public float[] pulse, beat, squash, bob, sway, shake, flicker, seq;
         public float spin;
@@ -106,6 +108,7 @@ public final class EmoteDef {
         l.alpha = f(o, "alpha", 1); l.rot = f(o, "rot", 0); l.glow = f(o, "glow", 0);
         l.start = f(o, "start", 0); l.end = f(o, "end", 1e9f);
         l.mirror = b(o, "mirror"); l.flip = b(o, "flip");
+        l.lit = o.has("lit") ? o.get("lit").getAsBoolean() : (l.anchor == Anchor.FACE || l.anchor == Anchor.HEAD);
         l.pulse = arr(o, "pulse"); l.beat = arr(o, "beat"); l.squash = arr(o, "squash"); l.bob = arr(o, "bob");
         l.sway = arr(o, "sway"); l.shake = arr(o, "shake"); l.flicker = arr(o, "flicker"); l.seq = arr(o, "seq");
         if (o.has("spin") && o.get("spin").isJsonPrimitive()) { l.spin = o.get("spin").getAsFloat(); l.hasSpin = true; }

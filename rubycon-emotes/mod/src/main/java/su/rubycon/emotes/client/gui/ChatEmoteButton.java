@@ -24,7 +24,7 @@ import java.util.WeakHashMap;
  * roleplay chat) and the quick picker popup it opens.
  */
 public final class ChatEmoteButton {
-    private static final int BTN = 12, CELL = 26, COLS = 5, PREV_W = 74;
+    private static final int BTN = 12, CELL = 24, COLS = 6, PREV_W = 80;
     private static Field inputField;
     private static final Map<EditBox, Integer> SHRUNK = new WeakHashMap<>();
     private static boolean open;
@@ -119,7 +119,10 @@ public final class ChatEmoteButton {
         return -1;
     }
 
-    private static int[] tabRect(int[] p, int i) { return new int[]{p[0] + PREV_W + 10 + i * 64, p[1] + 5, 62, 13}; }
+    private static int[] tabRect(int[] p, int i) {
+        int w = (COLS * CELL - 4) / 2;
+        return new int[]{p[0] + PREV_W + 10 + i * (w + 2), p[1] + 5, w, 13};
+    }
     private static int[] footRect(int[] p, int i) { return new int[]{p[0] + PREV_W + 10 + i * 66, p[1] + p[3] - 18, 64, 13}; }
 
     private static void drawPopup(GuiGraphics g, Screen s, int[] b, int mx, int my) {
