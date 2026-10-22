@@ -1,0 +1,104 @@
+{
+  "emotes": [
+    {
+      "id": "anger",
+      "name": "Злость",
+      "duration": 3.6
+    },
+    {
+      "id": "rage",
+      "name": "Ярость",
+      "duration": 4.4
+    },
+    {
+      "id": "laugh",
+      "name": "Смех",
+      "duration": 4.0
+    },
+    {
+      "id": "sad",
+      "name": "Грусть",
+      "duration": 5.0
+    },
+    {
+      "id": "cry",
+      "name": "Рыдания",
+      "duration": 4.6
+    },
+    {
+      "id": "surprise",
+      "name": "Удивление",
+      "duration": 3.2
+    },
+    {
+      "id": "shock",
+      "name": "Шок",
+      "duration": 3.4
+    },
+    {
+      "id": "confused",
+      "name": "Непонимание",
+      "duration": 4.6
+    },
+    {
+      "id": "think",
+      "name": "Задумчивость",
+      "duration": 6.0
+    },
+    {
+      "id": "embarrassed",
+      "name": "Смущение",
+      "duration": 4.2
+    },
+    {
+      "id": "love",
+      "name": "Любовь",
+      "duration": 4.6
+    },
+    {
+      "id": "delight",
+      "name": "Восторг",
+      "duration": 4.2
+    },
+    {
+      "id": "fright",
+      "name": "Испуг",
+      "duration": 4.0
+    },
+    {
+      "id": "awkward",
+      "name": "Неловкость",
+      "duration": 4.2
+    },
+    {
+      "id": "suspicion",
+      "name": "Подозрение",
+      "duration": 4.6
+    },
+    {
+      "id": "smug",
+      "name": "Самодовольство",
+      "duration": 4.2
+    },
+    {
+      "id": "sleepy",
+      "name": "Сонливость",
+      "duration": 6.0
+    },
+    {
+      "id": "dizzy",
+      "name": "Головокружение",
+      "duration": 4.6
+    },
+    {
+      "id": "facepalm",
+      "name": "Фейспалм",
+      "duration": 3.8
+    },
+    {
+      "id": "mischief",
+      "name": "Озорство",
+      "duration": 4.6
+    }
+  ]
+}
