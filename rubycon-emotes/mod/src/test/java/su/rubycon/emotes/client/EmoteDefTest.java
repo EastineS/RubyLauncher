@@ -79,6 +79,18 @@ class EmoteDefTest {
         assertTrue(evaluateAll(d) <= EmoteAnimator.MAX_QUADS);
     }
 
+    /** Extreme finite schedule values must not make the stream loop run forever (int saturation). */
+    @Test
+    @org.junit.jupiter.api.Timeout(value = 5)
+    void extremeScheduleTerminates() {
+        for (String start : new String[]{"-3e38", "3e38", "-1e9", "1e9"}) {
+            EmoteDef d = parse("{\"duration\":2,\"layers\":[{\"tex\":\"fx/y\",\"mode\":\"stream\",\"rate\":40,"
+                    + "\"start\":" + start + ",\"end\":3e38},"
+                    + "{\"tex\":\"fx/y\",\"mode\":\"burst\",\"every\":0.05,\"start\":" + start + ",\"end\":3e38}]}");
+            assertDoesNotThrow(() -> evaluateAll(d), start);
+        }
+    }
+
     /** Every bundled emote parses and evaluates without errors. */
     @Test
     void bundledEmotesEvaluate() throws IOException {

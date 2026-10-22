@@ -26,6 +26,8 @@ public final class EmoteAnimator {
 
     /** Hard cap on quads per emote per frame, independent of what a definition asks for. */
     public static final int MAX_QUADS = 1024;
+    /** Upper bound on particles examined per stream emitter per frame (MAX_RATE * MAX_LIFE = 320, plus slack). */
+    static final int MAX_STREAM_ITER = 512;
 
     /** Reused quad pool to avoid per-frame garbage. */
     public static final class Out {
@@ -271,9 +273,12 @@ public final class EmoteAnimator {
         if (e.mode == Mode.STREAM) {
             float rate = e.rate * (e.optional ? o.budget : 1);
             if (rate <= 0) return;
-            int i0 = Math.max(0, (int) Math.floor((t - e.life[1] - start) * rate));
-            int i1 = (int) Math.floor((Math.min(t, end) - start) * rate);
-            for (int i = i0; i <= i1 && !out.full(); i++) particle(e, t, o, out, i, start + i / rate, bill, sc);
+            // long + explicit cap: the live window holds at most rate * life particles, so the loop is
+            // bounded even if a schedule value slips past validation (no int saturation / wraparound)
+            long i0 = Math.max(0, (long) Math.floor((t - e.life[1] - start) * (double) rate));
+            long i1 = (long) Math.floor((Math.min(t, end) - start) * (double) rate);
+            long last = Math.min(i1, i0 + MAX_STREAM_ITER);
+            for (long i = i0; i <= last && !out.full(); i++) particle(e, t, o, out, (int) i, start + i / rate, bill, sc);
         } else {
             int count = e.optional ? Math.max(1, Math.round(e.count * o.budget)) : e.count;
             int bi = 0;
