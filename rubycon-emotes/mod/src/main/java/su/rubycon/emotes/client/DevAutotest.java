@@ -94,10 +94,10 @@ public final class DevAutotest {
         STEPS.add(new Step(t + 140, () -> shot("wheel")));
         STEPS.add(new Step(t + 150, () -> { mc.setScreen(null); mc.player.getInventory().armor.set(3, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND_HELMET));
             mc.options.hideGui = true; mc.options.setCameraType(CameraType.THIRD_PERSON_FRONT); }));
-        STEPS.add(new Step(t + 160, () -> mc.player.connection.sendCommand("emote facepalm")));
-        STEPS.add(new Step(t + 180, () -> shot("helmet_facepalm")));
-        STEPS.add(new Step(t + 210, () -> mc.player.connection.sendCommand("emote smug")));
-        STEPS.add(new Step(t + 240, () -> shot("helmet_smug")));
+        STEPS.add(new Step(t + 160, () -> mc.player.connection.sendCommand("emote anger")));
+        STEPS.add(new Step(t + 180, () -> shot("helmet_anger")));
+        STEPS.add(new Step(t + 210, () -> mc.player.connection.sendCommand("emote cry")));
+        STEPS.add(new Step(t + 240, () -> shot("helmet_cry")));
         STEPS.add(new Step(t + 260, () -> { RubyconEmotes.LOG.info("autotest done"); mc.stop(); }));
     }
 
