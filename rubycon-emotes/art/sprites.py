@@ -20,7 +20,7 @@ import sys
 
 import numpy as np
 
-from sdf import (Canvas, arc_pts, bezier, box, circle, ellipse, gaussian, glow_image, heart, hexc, inter, mix, polygon,
+from sdf import (Canvas, arc_pts, bezier, box, circle, ellipse, gaussian, heart, hexc, inter, mix, polygon,
                  polyline, segment, smooth, star, sub, union)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -631,7 +631,18 @@ def sign_vein(c, f=0):
     fill(c, d, RED, outline=0.06, shine=False)
 
 
-SIGNS = {"s_excl": sign_excl, "s_quest": sign_quest, "s_heart": sign_heart, "s_note": sign_note, "s_ghost": sign_ghost,
+def sign_confetti(c, f=0):
+    fill(c, box(c, 0, 0, 0.62, 0.32, 0.12), ("#ffffff", "#ffffff", "#d8d4e4"), outline=0.0, shine=False)
+
+
+def sign_flame(c, f=0):
+    """Small cartoon flame for rage/determined auras (white, tinted by the emitter)."""
+    d = drop_sdf(c, 0, -0.35, 0.45, 2.6)
+    fill(c, d, ("#ffffff", "#ffffff", "#e6e0ee"), outline=0.07, shine=False)
+    flat(c, drop_sdf(c, 0, -0.45, 0.2, 2.3), hexc("#fff6d8"), 0.9)
+
+
+SIGNS = {"s_confetti": sign_confetti, "s_flame": sign_flame, "s_excl": sign_excl, "s_quest": sign_quest, "s_heart": sign_heart, "s_note": sign_note, "s_ghost": sign_ghost,
          "s_z": sign_z, "s_puff": sign_puff, "s_star": sign_star, "s_drop": sign_drop, "s_vein": sign_vein}
 
 
@@ -669,7 +680,36 @@ def fx_lines(c):
     fx_out(c, np.clip(rays, 0, 1))
 
 
-FX = {"sparkle": fx_sparkle, "mote": fx_mote, "ring": fx_ring, "lines": fx_lines}
+def fx_star4(c):
+    """Crisp HSR-style four-point star: concave diamond with a hot core and a faint halo."""
+    ax, ay = np.abs(c.x), np.abs(c.y)
+    # concave astroid-like star: |x|^0.5 + |y|^0.5 <= r^0.5
+    d = np.sqrt(ax) + np.sqrt(ay) - np.sqrt(0.82)
+    body = smooth(0.02, -0.02, d)
+    r = np.hypot(c.x, c.y)
+    core = np.exp(-(r / 0.16) ** 2)
+    halo = np.exp(-(r / 0.45) ** 2) * 0.35
+    fx_out(c, np.clip(body * 0.85 + core * 0.6 + halo, 0, 1))
+
+
+def fx_flash(c):
+    r = np.hypot(c.x, c.y)
+    fx_out(c, np.clip(np.exp(-(r / 0.5) ** 2) * 0.9 + np.exp(-(r / 0.15) ** 2) * 0.4, 0, 1) * smooth(1.0, 0.8, r))
+
+
+def fx_streak(c):
+    """Soft speed/aura line, long axis vertical."""
+    fx_out(c, np.clip(np.exp(-(c.x / 0.07) ** 2) * np.clip(1 - np.abs(c.y), 0, 1) ** 1.2 * 1.2, 0, 1))
+
+
+def fx_ring_soft(c):
+    """Thick soft shock ring for impacts."""
+    r = np.hypot(c.x, c.y)
+    fx_out(c, np.clip(np.exp(-((r - 0.78) / 0.09) ** 2) * 0.9 + np.exp(-((r - 0.84) / 0.02) ** 2) * 0.5, 0, 1))
+
+
+FX = {"sparkle": fx_sparkle, "mote": fx_mote, "ring": fx_ring, "lines": fx_lines, "star4": fx_star4, "flash": fx_flash,
+      "streak": fx_streak, "ring_soft": fx_ring_soft}
 
 
 # ============================================================ output
