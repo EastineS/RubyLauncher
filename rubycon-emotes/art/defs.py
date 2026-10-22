@@ -83,7 +83,7 @@ class Emote:
 
     def to_json(self):
         return {"duration": self.dur, "fade_in": 0.05, "fade_out": 0.45, "color": self.accent, "icon_time": self.icon_time,
-                "layers": self.layers}
+                "layers": common_vfx(self)}
 
 
 def blink_keys(dur):
@@ -156,19 +156,22 @@ def aura(color, rate=5, at_u=(0, -0.2), box=(9, 3), size=(1.2, 2.2), speed=(5, 8
 
 
 def common_vfx(e):
-    """Every emote: flash + ring + star burst on appear, gentle twinkle while shown, poof on exit."""
+    """Every emote: flash + ring + star burst on appear, gentle twinkle while shown, poof on exit.
+    Returns a new layer list; e.layers is left untouched so generation can run more than once."""
     light = mixhex(e.accent, "#ffffff", 0.45)
+    layers = list(e.layers)
     # flash goes under the bubble (layers draw in order) so it rims it instead of washing it out
-    e.layers.insert(0, burst_fx("flash", (0, 0), 15, 0.0, light, 0.6, 1.1, 0.22, curve="flash"))
-    e.layers.insert(1, star_burst((0, 0), 0.05, 7, ("#ffffff", light), (2.6, 4.0), (12, 17)))  # behind the bubble too
-    e.layers.insert(3, appear_ring(e.accent))
-    e.layers.append(dict(tex="fx/star4", mode="stream", rate=1.8, anchor="above", pos=POS, offset=u2px(0, 0),
-                         color=["#ffffff", light], size=[1.8, 3.0], life=[0.6, 0.9], curve="flash", box=[16, 13], start=0.6,
-                         end=e.dur - 0.6))
-    e.layers.append(dict(tex="emote/s_puff", mode="burst", times=[e.dur - 0.42], count=6, anchor="above", pos=POS,
-                         offset=u2px(0, 0), color=["#ffffff"], size=[1.3, 2.0], speed=[5, 8], spread=360, life=[0.4, 0.5],
-                         curve="grow", grow=1.6, alpha=0.9, blend="normal", box=[6, 5], optional=True))
-    e.layers.append(star_burst((0, 0), e.dur - 0.4, 5, ("#ffffff", light), (2.0, 3.0), (6, 9), optional=True))
+    layers.insert(0, burst_fx("flash", (0, 0), 15, 0.0, light, 0.6, 1.1, 0.22, curve="flash"))
+    layers.insert(1, star_burst((0, 0), 0.05, 7, ("#ffffff", light), (2.6, 4.0), (12, 17)))  # behind the bubble too
+    layers.insert(3, appear_ring(e.accent))
+    layers.append(dict(tex="fx/star4", mode="stream", rate=1.8, anchor="above", pos=POS, offset=u2px(0, 0),
+                       color=["#ffffff", light], size=[1.8, 3.0], life=[0.6, 0.9], curve="flash", box=[16, 13], start=0.6,
+                       end=e.dur - 0.6))
+    layers.append(dict(tex="emote/s_puff", mode="burst", times=[e.dur - 0.42], count=6, anchor="above", pos=POS,
+                       offset=u2px(0, 0), color=["#ffffff"], size=[1.3, 2.0], speed=[5, 8], spread=360, life=[0.4, 0.5],
+                       curve="grow", grow=1.6, alpha=0.9, blend="normal", box=[6, 5], optional=True))
+    layers.append(star_burst((0, 0), e.dur - 0.4, 5, ("#ffffff", light), (2.0, 3.0), (6, 9), optional=True))
+    return layers
 
 
 def SHAKE(amp, fq=6):
@@ -376,7 +379,6 @@ def main():
         os.remove(os.path.join(ed, f))
     index, lang = [], {"ru_ru": {}, "en_us": {}}
     for e in EMOTES:
-        common_vfx(e)
         with open(os.path.join(ed, e.id + ".json"), "w", encoding="utf-8") as f:
             json.dump(e.to_json(), f, ensure_ascii=False, separators=(",", ":"))
         index.append({"id": e.id, "name": e.ru, "duration": e.dur})
