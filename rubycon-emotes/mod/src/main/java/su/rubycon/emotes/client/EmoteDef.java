@@ -125,16 +125,21 @@ public final class EmoteDef {
         if (o.has("color")) {
             JsonElement c = o.get("color");
             if (c.isJsonArray()) {
-                l.colors = new float[c.getAsJsonArray().size()][];
-                for (int i = 0; i < l.colors.length; i++) l.colors[i] = rgba(c.getAsJsonArray().get(i).getAsString());
+                // an empty list keeps the white default: colours are indexed and used as a modulo divisor
+                int n = Math.min(c.getAsJsonArray().size(), MAX_KEYS);
+                if (n > 0) {
+                    l.colors = new float[n][];
+                    for (int i = 0; i < n; i++) l.colors[i] = rgba(c.getAsJsonArray().get(i).getAsString());
+                }
             } else l.colors = new float[][]{rgba(c.getAsString())};
         }
         l.alpha = f(o, "alpha", 1); l.rot = f(o, "rot", 0); l.glow = f(o, "glow", 0);
         l.start = f(o, "start", 0); l.end = f(o, "end", 1e9f);
         l.mirror = b(o, "mirror"); l.flip = b(o, "flip");
         l.lit = o.has("lit") ? o.get("lit").getAsBoolean() : (l.anchor == Anchor.FACE || l.anchor == Anchor.HEAD);
-        l.pulse = arr(o, "pulse"); l.beat = arr(o, "beat"); l.squash = arr(o, "squash"); l.bob = arr(o, "bob");
-        l.sway = arr(o, "sway"); l.shake = arr(o, "shake"); l.flicker = arr(o, "flicker"); l.seq = arr(o, "seq");
+        l.pulse = mod(o, "pulse"); l.beat = mod(o, "beat"); l.squash = mod(o, "squash"); l.bob = mod(o, "bob");
+        l.sway = mod(o, "sway"); l.shake = mod(o, "shake"); l.flicker = mod(o, "flicker"); l.seq = mod(o, "seq");
+        if (l.seq != null && Math.abs(l.seq[0]) < 1e-3f) l.seq = null;  // seq[0] is a period (divisor)
         if (o.has("spin") && o.get("spin").isJsonPrimitive()) { l.spin = o.get("spin").getAsFloat(); l.hasSpin = true; }
         if (o.has("keys")) {
             JsonObject k = o.getAsJsonObject("keys");
@@ -157,7 +162,7 @@ public final class EmoteDef {
             l.wobble = vec(o, "wobble", l.wobble, 2);
             if (o.has("radius")) {
                 float[] r = arr(o, "radius");
-                l.radius = new float[]{r[0], r.length > 1 ? r[1] : r[0], r.length > 2 ? r[2] : 0};
+                if (r != null && r.length > 0) l.radius = new float[]{r[0], r.length > 1 ? r[1] : r[0], r.length > 2 ? r[2] : 0};
             }
             l.times = o.has("times") ? arr(o, "times") : new float[0];
             if (l.times.length > MAX_TIMES) l.times = java.util.Arrays.copyOf(l.times, MAX_TIMES);
@@ -200,6 +205,12 @@ public final class EmoteDef {
         float[] out = new float[Math.min(a.size(), MAX_KEYS)];
         for (int i = 0; i < out.length; i++) out[i] = finite(a.get(i).getAsFloat(), 0);
         return out;
+    }
+
+    /** Animation modifier [amplitude, frequency, phase?]; shorter arrays are ignored (the animator reads [0] and [1]). */
+    private static float[] mod(JsonObject o, String k) {
+        float[] a = arr(o, k);
+        return a != null && a.length >= 2 ? a : null;
     }
 
     private static float[] vec(JsonObject o, String k, float[] d, int n) {
