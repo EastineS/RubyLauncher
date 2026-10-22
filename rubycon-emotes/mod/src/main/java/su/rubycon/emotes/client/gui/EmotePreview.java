@@ -39,10 +39,10 @@ public final class EmotePreview {
             Ui.icon(g, id, x + w / 2 - 32, y + h / 2 - 32, 64, 1);
             return;
         }
-        // waist-up framing with the head left of centre: the emblem floats at the upper right
-        int scale = Math.max(12, (int) Math.min(h * 0.55f, w / 1.35f));
-        int feetY = (int) (y + h * 0.42f + 1.75f * scale);
-        int footX = x + (int) (w * 0.4f);
+        // waist-up framing with the head on the left: the speech bubble sits to the right of it
+        int scale = Math.max(12, (int) Math.min(h * 0.5f, w / 1.45f));
+        int feetY = (int) (y + h * 0.44f + 1.75f * scale);
+        int footX = x + (int) (w * 0.3f);
         ItemStack oldHelmet = p.getInventory().armor.get(3);
         float bodyRot = p.yBodyRot, yRot = p.getYRot(), xRot = p.getXRot(), head = p.yHeadRot, headO = p.yHeadRotO, bodyO = p.yBodyRotO;
         g.enableScissor(x + 1, y + 1, x + w - 1, y + h - 1);

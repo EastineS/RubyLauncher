@@ -130,8 +130,14 @@ public final class EmoteAnimator {
 
     private static void emit(Out out, Layer l, boolean glow, Anchor anchor, boolean billboard, float px, float py, float pz,
                              float ox, float oy, float w, float h, float rot, float[] col, float a, boolean flip, float pvx, float pvy) {
+        emit(out, l, -1, glow, anchor, billboard, px, py, pz, ox, oy, w, h, rot, col, a, flip, pvx, pvy);
+    }
+
+    private static void emit(Out out, Layer l, int frame, boolean glow, Anchor anchor, boolean billboard, float px, float py, float pz,
+                             float ox, float oy, float w, float h, float rot, float[] col, float a, boolean flip, float pvx, float pvy) {
         Quad q = out.next();
-        q.tex = glow ? l.glowTex : l.tex;
+        if (frame >= 0 && l.frames != null) q.tex = glow ? l.glowFrames[frame] : l.frames[frame];
+        else q.tex = glow ? l.glowTex : l.tex;
         q.blend = glow ? Blend.ADD : l.blend;
         q.anchor = anchor; q.billboard = billboard; q.flip = flip;
         q.lit = !glow && l.lit;
@@ -197,6 +203,7 @@ public final class EmoteAnimator {
         float sc = (bill ? o.scale : 1) * k;
         float w = p.size[0] * sx * sc, h = p.size[1] * sy * sc;
         float[] col = p.colors[0];
+        int frame = p.frames == null ? -1 : p.frameSeq[(int) Math.floor(lt * p.fps) % p.frameSeq.length];
         for (int m = 1; m >= -1; m -= 2) {
             if (m < 0 && !p.mirror) break;
             float qpx, qpy, qpz, qox, qoy;
@@ -210,9 +217,9 @@ public final class EmoteAnimator {
             float r = rot * m;
             boolean flip = (m < 0) != p.flip;
             if (p.glow > 0)
-                emit(out, p, true, p.anchor, bill, qpx, qpy, qpz, qox, qoy, w * GLOW_PAD, h * GLOW_PAD, r, col, a * p.glow, flip,
+                emit(out, p, frame, true, p.anchor, bill, qpx, qpy, qpz, qox, qoy, w * GLOW_PAD, h * GLOW_PAD, r, col, a * p.glow, flip,
                         p.pivot[0] / GLOW_PAD, p.pivot[1] / GLOW_PAD);
-            emit(out, p, false, p.anchor, bill, qpx, qpy, qpz, qox, qoy, w, h, r, col, a, flip, p.pivot[0], p.pivot[1]);
+            emit(out, p, frame, false, p.anchor, bill, qpx, qpy, qpz, qox, qoy, w, h, r, col, a, flip, p.pivot[0], p.pivot[1]);
         }
     }
 
