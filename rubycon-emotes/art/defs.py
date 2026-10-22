@@ -36,8 +36,8 @@ def mixhex(a, b, t):
 
 
 class Emote:
-    def __init__(self, id, ru, en, accent, dur, motion=None):
-        self.id, self.ru, self.en, self.accent, self.dur = id, ru, en, accent, dur
+    def __init__(self, eid, ru, en, accent, dur, motion=None):
+        self.id, self.ru, self.en, self.accent, self.dur = eid, ru, en, accent, dur
         self.motion = {"bob": [0.25, 0.45]}
         self.motion.update(motion or {})
         self.layers = []
@@ -126,7 +126,8 @@ def appear_ring(accent):
     return burst_fx("ring", (0, 0), 12, 0.05, mixhex(accent, "#ffffff", 0.4), 0.7, 1.35, 0.45)
 
 
-SHAKE = lambda amp, fq=6: {"shake": [amp, fq]}
+def SHAKE(amp, fq=6):
+    return {"shake": [amp, fq]}
 JOLT = {"x": [[0, 0], [0.06, -0.8], [0.12, 0.7], [0.18, -0.5], [0.24, 0.3], [0.3, 0]]}
 
 EMOTES = []

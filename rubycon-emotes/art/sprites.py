@@ -179,7 +179,7 @@ def _(c, f=0):
 
 @part("e_ring")
 def _(c, f=0):
-    for (x, y), s in ((EYE_L, -1), (EYE_R, 1)):
+    for (x, y), _s in ((EYE_L, -1), (EYE_R, 1)):
         ink(c, np.abs(ellipse(c, x, y, 0.17, 0.2)), LW * 1.05)
         flat(c, circle(c, x, y, 0.05), INK)
 
@@ -273,7 +273,7 @@ def _(c, f=0):
 
 @part("e_up")
 def _(c, f=0):
-    for (x, y), s in ((EYE_L, -1), (EYE_R, 1)):
+    for (x, y), _s in ((EYE_L, -1), (EYE_R, 1)):
         ink(c, np.abs(ellipse(c, x, y, 0.15, 0.17)), LW * 0.85)
         flat(c, circle(c, x + 0.05, y + 0.07, 0.06), INK)
 
@@ -444,7 +444,7 @@ def _(c, f=0):
 @part("x_stream", frames=3)
 def _(c, f=0):
     """Waterfall tears from T-eyes down to the bubble rim, wavy edges flowing (3 frames)."""
-    for (x, y), s in ((EYE_L, -1), (EYE_R, 1)):
+    for (x, y), _s in ((EYE_L, -1), (EYE_R, 1)):
         top = y - 0.16
         n = 22
         ph = f * 2.1
@@ -637,13 +637,14 @@ SIGNS = {"s_excl": sign_excl, "s_quest": sign_quest, "s_heart": sign_heart, "s_n
 
 # ------------------------------------------------------------ additive white fx
 def fx_out(c, a):
-    c.rgba = np.concatenate([np.ones(a.shape + (3,), np.float32) * a[..., None], a[..., None]], -1).astype(np.float32)
+    c.rgba = np.concatenate([np.ones((*a.shape, 3), np.float32) * a[..., None], a[..., None]], -1).astype(np.float32)
 
 
 def fx_sparkle(c):
     r = np.hypot(c.x, c.y)
     ax, ay = np.abs(c.x), np.abs(c.y)
-    w = lambda t: 0.012 + 0.045 * (1 - np.clip(t, 0, 1)) ** 3
+    def w(t):
+        return 0.012 + 0.045 * (1 - np.clip(t, 0, 1)) ** 3
     rays = np.maximum(np.exp(-(ay / w(ax)) ** 2) * (1 - np.clip(ax, 0, 1)) ** 1.6,
                       np.exp(-(ax / w(ay)) ** 2) * (1 - np.clip(ay, 0, 1)) ** 1.6)
     core = np.exp(-(r / 0.06) ** 2) + 0.45 * np.exp(-(r / 0.2) ** 2)
@@ -679,7 +680,8 @@ def save(img, sub_, name):
 
 
 def main(only=None):
-    want = lambda n: not only or n in only
+    def want(n):
+        return not only or n in only
     if want("bubble"):
         c = Canvas(*FRAME)
         bubble(c)
