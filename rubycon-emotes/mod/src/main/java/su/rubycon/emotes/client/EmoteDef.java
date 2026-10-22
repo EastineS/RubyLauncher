@@ -27,6 +27,10 @@ public final class EmoteDef {
     public static final class Layer {
         public Mode mode = Mode.PART;
         public ResourceLocation tex, glowTex;
+        /** flipbook frames (frame 0 = tex); null when the layer is a single image */
+        public ResourceLocation[] frames, glowFrames;
+        public int[] frameSeq;
+        public float fps = 8;
         public Blend blend = Blend.NORMAL;
         public Anchor anchor = Anchor.ABOVE;
         public Helmet helmet = Helmet.PUSH;
@@ -86,6 +90,21 @@ public final class EmoteDef {
         ResourceLocation base = tex.contains(":") ? new ResourceLocation(tex) : new ResourceLocation(ns, tex);
         l.tex = new ResourceLocation(base.getNamespace(), "textures/" + base.getPath() + ".png");
         l.glowTex = new ResourceLocation(base.getNamespace(), "textures/" + base.getPath() + "_glow.png");
+        int nf = o.has("frames") ? Math.max(1, Math.min(16, o.get("frames").getAsInt())) : 1;
+        if (nf > 1) {
+            l.frames = new ResourceLocation[nf];
+            l.glowFrames = new ResourceLocation[nf];
+            for (int i = 0; i < nf; i++) {
+                String p = base.getPath() + (i == 0 ? "" : "_" + i);
+                l.frames[i] = new ResourceLocation(base.getNamespace(), "textures/" + p + ".png");
+                l.glowFrames[i] = new ResourceLocation(base.getNamespace(), "textures/" + p + "_glow.png");
+            }
+            boolean ping = o.has("pingpong") && o.get("pingpong").getAsBoolean();
+            int len = ping && nf > 2 ? nf * 2 - 2 : nf;
+            l.frameSeq = new int[len];
+            for (int i = 0; i < len; i++) l.frameSeq[i] = i < nf ? i : 2 * nf - 2 - i;
+            l.fps = clamp(f(o, "fps", 8), 0.5f, 30);
+        }
         if (o.has("mode")) l.mode = switch (o.get("mode").getAsString()) {
             case "burst" -> Mode.BURST; case "orbit" -> Mode.ORBIT; default -> Mode.STREAM;
         };
