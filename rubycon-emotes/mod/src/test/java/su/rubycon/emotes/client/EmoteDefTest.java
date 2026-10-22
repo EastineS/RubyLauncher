@@ -79,6 +79,40 @@ class EmoteDefTest {
         assertTrue(evaluateAll(d) <= EmoteAnimator.MAX_QUADS);
     }
 
+    /** Extreme finite schedule values must not make the stream loop run forever (int saturation). */
+    @Test
+    @org.junit.jupiter.api.Timeout(value = 5)
+    void extremeScheduleTerminates() {
+        for (String start : new String[]{"-3e38", "3e38", "-1e9", "1e9"}) {
+            EmoteDef d = parse("{\"duration\":2,\"layers\":[{\"tex\":\"fx/y\",\"mode\":\"stream\",\"rate\":40,"
+                    + "\"start\":" + start + ",\"end\":3e38},"
+                    + "{\"tex\":\"fx/y\",\"mode\":\"burst\",\"every\":0.05,\"start\":" + start + ",\"end\":3e38}]}");
+            assertDoesNotThrow(() -> evaluateAll(d), start);
+        }
+    }
+
+    /** The animator bounds stream iteration on its own, even if a layer bypasses parser validation. */
+    @Test
+    void streamLoopBoundedWithoutParserClamp() {
+        EmoteDef d = parse("{\"duration\":2,\"layers\":[{\"tex\":\"fx/y\",\"mode\":\"stream\",\"rate\":40}]}");
+        EmoteDef.Layer l = d.layers.get(0);
+        l.start = -3e38f;  // simulate a value that slipped past validation
+        l.end = 3e38f;
+        long t0 = System.nanoTime();
+        assertDoesNotThrow(() -> evaluateAll(d));
+        assertTrue(System.nanoTime() - t0 < 2_000_000_000L, "stream evaluation must stay bounded");
+    }
+
+    @Test
+    void schedulesAreClampedOnLoad() {
+        EmoteDef d = parse("{\"duration\":2,\"layers\":[{\"tex\":\"fx/y\",\"start\":-1e30,\"end\":1e30},"
+                + "{\"tex\":\"fx/y\",\"start\":5,\"end\":1}]}");
+        assertEquals(0f, d.layers.get(0).start);
+        assertEquals(EmoteDef.MAX_TIME, d.layers.get(0).end);
+        assertEquals(5f, d.layers.get(1).start);
+        assertEquals(5f, d.layers.get(1).end);  // end never precedes start
+    }
+
     /** Every bundled emote parses and evaluates without errors. */
     @Test
     void bundledEmotesEvaluate() throws IOException {
