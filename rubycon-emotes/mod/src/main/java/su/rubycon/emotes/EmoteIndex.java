@@ -13,6 +13,7 @@ public final class EmoteIndex {
     private static List<Info> list = List.of();
     private static Map<String, Info> byId = Map.of();
     public static final String CONFIG_FILE = "rubycon_emotes-index.json";
+    public static final int MAX_NAME = 64;
 
     public static List<Info> all() { return list; }
     public static Info get(String id) { return byId.get(id); }
@@ -58,6 +59,8 @@ public final class EmoteIndex {
                 String id = e.get("id").getAsString();
                 if (!id.matches("[a-z0-9_]{1,32}")) continue;
                 String name = e.has("name") ? e.get("name").getAsString() : id;
+                // Sync encodes names with a 64-char limit; a longer one would break the packet
+                if (name.length() > MAX_NAME) name = name.substring(0, MAX_NAME);
                 float dur = e.has("duration") ? e.get("duration").getAsFloat() : 4f;
                 out.add(new Info(id, name, Math.round(Math.max(0.5f, Math.min(dur, 30f)) * 1000)));
             }
