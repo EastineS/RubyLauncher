@@ -17,21 +17,22 @@ public final class EmoteIndex {
     public static List<Info> all() { return list; }
     public static Info get(String id) { return byId.get(id); }
 
+    /**
+     * The bundled list is authoritative so mod updates always apply. The optional config file only
+     * adds emotes (e.g. from a server resource pack); ids already bundled are ignored there.
+     */
     public static void reload() {
-        String json = null;
+        List<Info> out = new ArrayList<>();
+        List<Info> builtin = parse(readBuiltin());
+        if (builtin != null) out.addAll(builtin);
         Path cfg = FMLPaths.CONFIGDIR.get().resolve(CONFIG_FILE);
         try {
-            if (Files.isRegularFile(cfg)) json = Files.readString(cfg, StandardCharsets.UTF_8);
-        } catch (Exception e) { RubyconEmotes.LOG.warn("Cannot read {}: {}", cfg, e.toString()); }
-        String builtin = readBuiltin();
-        List<Info> parsed = json == null ? null : parse(json);
-        if (parsed == null || parsed.isEmpty()) {
-            parsed = parse(builtin);
-            if (json == null && builtin != null) {
-                try { Files.writeString(cfg, builtin, StandardCharsets.UTF_8); } catch (Exception ignored) {}
+            if (Files.isRegularFile(cfg)) {
+                List<Info> extra = parse(Files.readString(cfg, StandardCharsets.UTF_8));
+                if (extra != null) out.addAll(extra);
             }
-        }
-        set(parsed == null ? List.of() : parsed);
+        } catch (Exception e) { RubyconEmotes.LOG.warn("Cannot read {}: {}", cfg, e.toString()); }
+        set(out);
     }
 
     public static void set(List<Info> infos) {
