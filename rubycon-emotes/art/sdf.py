@@ -26,7 +26,7 @@ class Canvas:
     def over(self, rgb, a):
         a = np.clip(a, 0, 1)[..., None]
         src = np.concatenate([np.asarray(rgb, np.float32) * a, a], -1) if np.ndim(rgb) == 3 else \
-            np.concatenate([np.broadcast_to(np.asarray(rgb, np.float32), a.shape[:2] + (3,)) * a, a], -1)
+            np.concatenate([np.broadcast_to(np.asarray(rgb, np.float32), (*a.shape[:2], 3)) * a, a], -1)
         self.rgba = src + self.rgba * (1 - a)
 
     def image(self):
@@ -247,7 +247,7 @@ def glow_image(c, mask, pal_glow, radius=0.18, strength=1.0, core=0.0):
     g = gaussian(mask, r_px) * 1.6 + gaussian(mask, r_px * 0.35) * 0.9 * core
     g = np.clip(g * strength, 0, 1)
     out = Canvas(mask.shape[1] // SS, mask.shape[0] // SS)
-    out.rgba = np.concatenate([np.broadcast_to(pal_glow, g.shape + (3,)) * g[..., None], g[..., None]], -1).astype(np.float32)
+    out.rgba = np.concatenate([np.broadcast_to(pal_glow, (*g.shape, 3)) * g[..., None], g[..., None]], -1).astype(np.float32)
     return out.image()
 
 
