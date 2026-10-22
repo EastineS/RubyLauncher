@@ -1,0 +1,20 @@
+
+[emotes]
+	#Включить систему эмоций
+	enabled = true
+	#Разрешённые эмоции (пусто = все)
+	allowed = []
+	#Минимальный интервал между активациями, мс
+	#Range: 250 ~ 60000
+	cooldownMs = 2000
+	#Максимальная длительность эмоции, сек
+	#Range: 1.0 ~ 30.0
+	maxDuration = 6.0
+	#Дистанция отображения, блоков
+	#Range: 4 ~ 128
+	displayDistance = 24
+	#Измерения, где эмоции отключены, например minecraft:the_end
+	disabledDimensions = []
+	#Режимы игры, где эмоции отключены: survival, creative, adventure, spectator
+	disabledGameModes = ["spectator"]
+
