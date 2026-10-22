@@ -69,6 +69,8 @@ public final class EmoteDef {
     // Workload limits: definitions come from resource packs, so every value that drives a loop is bounded here.
     static final int MAX_LAYERS = 64, MAX_COUNT = 64, MAX_TIMES = 32, MAX_KEYS = 64;
     static final float MAX_RATE = 40, MIN_LIFE = 0.05f, MAX_LIFE = 8, MIN_EVERY = 0.05f;
+    /** Layer schedules live inside [0, MAX_TIME] seconds; emotes are at most 30 s long. */
+    static final float MAX_TIME = 60;
 
     // ------------------------------------------------------------------ parsing
     static EmoteDef parse(String ns, String id, JsonObject o) {
@@ -134,7 +136,8 @@ public final class EmoteDef {
             } else l.colors = new float[][]{rgba(c.getAsString())};
         }
         l.alpha = f(o, "alpha", 1); l.rot = f(o, "rot", 0); l.glow = f(o, "glow", 0);
-        l.start = f(o, "start", 0); l.end = f(o, "end", 1e9f);
+        l.start = clamp(f(o, "start", 0), 0, MAX_TIME);
+        l.end = o.has("end") ? clamp(f(o, "end", MAX_TIME), l.start, MAX_TIME) : 1e9f;
         l.mirror = b(o, "mirror"); l.flip = b(o, "flip");
         l.lit = o.has("lit") ? o.get("lit").getAsBoolean() : (l.anchor == Anchor.FACE || l.anchor == Anchor.HEAD);
         l.pulse = mod(o, "pulse"); l.beat = mod(o, "beat"); l.squash = mod(o, "squash"); l.bob = mod(o, "bob");
