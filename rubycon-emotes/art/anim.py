@@ -194,6 +194,13 @@ def eval_part(p, t, opts, out):
     off = p.get("offset", [0, 0])
     color = parse_color(p.get("color", "#ffffff"))
     tex = p["tex"]
+    nf = p.get("frames", 1)
+    if nf > 1:
+        # flipbook: <tex>, <tex>_1, <tex>_2 ... at "fps"; "pingpong" plays 0..n-1..1
+        k = int(math.floor(lt * p.get("fps", 8)))
+        seq_ = list(range(nf)) + (list(range(nf - 2, 0, -1)) if p.get("pingpong") else [])
+        fi = seq_[k % len(seq_)]
+        tex = tex if fi == 0 else f"{tex}_{fi}"
     blend = p.get("blend", "normal")
     pivot = tuple(p.get("pivot", [0, 0]))
     copies = [1, -1] if p.get("mirror") else [1]
