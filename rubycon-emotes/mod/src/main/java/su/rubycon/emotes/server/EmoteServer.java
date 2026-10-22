@@ -35,7 +35,7 @@ public final class EmoteServer {
     }
 
     private static final Map<UUID, Active> ACTIVE = new HashMap<>();
-    private static final Map<UUID, Long> LAST_PLAY = new HashMap<>();
+    private static final Cooldowns COOLDOWNS = new Cooldowns();
     private static int tick;
 
     public static boolean allowed(String id) {
@@ -60,9 +60,7 @@ public final class EmoteServer {
         if (blockedHere(p)) return "rubycon_emotes.msg.disabled";
         if (!allowed(id)) return "rubycon_emotes.msg.unknown";
         long now = System.currentTimeMillis();
-        Long last = LAST_PLAY.get(p.getUUID());
-        if (last != null && now - last < EmotesConfig.COOLDOWN_MS.get()) return "rubycon_emotes.msg.cooldown";
-        LAST_PLAY.put(p.getUUID(), now);
+        if (!COOLDOWNS.tryAcquire(p.getUUID(), now, EmotesConfig.COOLDOWN_MS.get())) return "rubycon_emotes.msg.cooldown";
         Active a = new Active(id, now, durationOf(EmoteIndex.get(id)));
         ACTIVE.put(p.getUUID(), a);
         send(p, new EmoteNetwork.State(p.getId(), id, 0, a.durationMs()));
@@ -98,7 +96,7 @@ public final class EmoteServer {
     public static void onStart(ServerStartingEvent e) {
         EmoteIndex.reload();
         ACTIVE.clear();
-        LAST_PLAY.clear();
+        COOLDOWNS.clear();
     }
 
     @SubscribeEvent
@@ -109,8 +107,8 @@ public final class EmoteServer {
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
         if (e.getEntity() instanceof ServerPlayer sp) {
+            // cooldown history is kept so relogging does not reset it; onTick prunes it
             stop(sp, true);
-            LAST_PLAY.remove(sp.getUUID());
         }
     }
 
@@ -150,7 +148,7 @@ public final class EmoteServer {
         if (e.phase != TickEvent.Phase.END || ++tick % 20 != 0) return;
         long now = System.currentTimeMillis();
         ACTIVE.values().removeIf(a -> a.expired(now));
-        LAST_PLAY.values().removeIf(t -> now - t > 120_000);
+        COOLDOWNS.prune(now, EmotesConfig.COOLDOWN_MS.get());
     }
 
     @SubscribeEvent
