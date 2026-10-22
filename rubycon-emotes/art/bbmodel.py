@@ -1,6 +1,6 @@
 """Exports each emote as a Blockbench project (Generic Model format) for art review and tweaking.
 
-The head is a textured 8x8x8 cube; every quad of the emote is a zero-thickness plane at the
+The player is the full textured model from preview.BOXES; every quad of the emote is a zero-thickness plane at the
 icon frame (billboards are frozen facing +z). Textures are embedded so the files are portable.
 These are reference files: the game reads assets/rubycon_emotes/emotes/*.json, not .bbmodel.
 """
@@ -41,16 +41,17 @@ def export(eid, em):
 
     elements = []
     skin = tex("skin", preview.SKIN)
-    # Blockbench units = pixels; head bottom at y=24 like a player model
-    faces = {}
-    uvs = {"north": (8, 8, 16, 16), "east": (0, 8, 8, 16), "south": (24, 8, 32, 16), "west": (16, 8, 24, 16),
-           "up": (8, 0, 16, 8), "down": (16, 0, 24, 8)}
-    for f, uv in uvs.items():
-        faces[f] = {"uv": list(uv), "texture": skin}
-    elements.append({"name": "head", "type": "cube", "uuid": str(uuid.uuid4()), "from": [-4, 24, -4], "to": [4, 32, 4],
-                     "origin": [0, 24, 0], "rotation": [0, 0, 0], "faces": faces, "box_uv": False, "rescale": False,
-                     "color": 0})
-    quads = anim.evaluate(em, em.get("icon_time", 1.0))
+    # Blockbench units = pixels; the model stands on y=0 like a player (head centre at y=28)
+    bb_face = {"front": "south", "back": "north", "left": "east", "right": "west", "top": "up", "bottom": "down"}
+    for name, lo, hi, (u, v) in preview.BOXES:
+        w, h, d = hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]
+        faces = {}
+        for f, (x, y, fw, fh) in preview.uv_faces(u, v, w, h, d).items():
+            faces[bb_face[f]] = {"uv": [x, y, x + fw, y + fh], "texture": skin}
+        elements.append({"name": name, "type": "cube", "uuid": str(uuid.uuid4()), "from": [lo[0], lo[1] + 28, lo[2]],
+                         "to": [hi[0], hi[1] + 28, hi[2]], "origin": [0, 24, 0], "rotation": [0, 0, 0], "faces": faces,
+                         "box_uv": False, "rescale": False, "color": 0})
+    quads = anim.evaluate(em, 1.6)
     for n, q in enumerate(quads):
         img = preview.load_tex(q["tex"])
         if img is None:
