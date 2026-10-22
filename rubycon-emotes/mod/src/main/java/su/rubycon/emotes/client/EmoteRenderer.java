@@ -23,15 +23,13 @@ import java.util.Map;
 /**
  * Draws evaluated quads relative to a player head. Coordinates arrive in pixels with the head centre
  * as origin (y up, z out of the face) and are converted to model space (y down, face at -z).
+ * Billboards are full-bright overlays; face/head marks take the entity's light so they sit on the skin.
  */
 public final class EmoteRenderer {
     private static final float PX = 1 / 16f;
     private static final Map<ResourceLocation, Boolean> PRESENT = new HashMap<>();
     private static final EmoteAnimator.Out OUT = new EmoteAnimator.Out();
-    private static final Matrix3f NORMAL = new Matrix3f();
-
-    /** Head pose captured from the player model in its own model space. */
-    public record HeadPose(ModelPart head) {}
+    private static final Matrix3f IDENTITY = new Matrix3f();
 
     public static void clearTextureCache() { PRESENT.clear(); }
 
@@ -44,9 +42,12 @@ public final class EmoteRenderer {
     }
 
     /**
-     * @param ps pose in player model space (as given to a RenderLayer)
+     * @param ps    pose in player model space (as given to a RenderLayer)
+     * @param light packed entity light, used by world-lit marks
+     * @param lag   view-space offset (blocks) applied to billboards so they trail the head slightly; may be null
      */
-    public static void render(EmoteDef def, float t, EmoteAnimator.Opts opts, PoseStack ps, MultiBufferSource buf, ModelPart head) {
+    public static void render(EmoteDef def, float t, EmoteAnimator.Opts opts, PoseStack ps, MultiBufferSource buf, ModelPart head,
+                              int light, Vector3f lag) {
         EmoteAnimator.evaluate(def, t, opts, OUT);
         if (OUT.size == 0) return;
         boolean gui = RenderSystem.getVertexSorting() == VertexSorting.ORTHOGRAPHIC_Z;
@@ -54,6 +55,7 @@ public final class EmoteRenderer {
         ps.pushPose();
         head.translateAndRotate(ps);
         Matrix4f headM = new Matrix4f(ps.last().pose());
+        Matrix3f headN = new Matrix3f(ps.last().normal());
         ps.popPose();
         ps.pushPose();
         ps.translate(head.x * PX, head.y * PX, head.z * PX);
@@ -77,6 +79,7 @@ public final class EmoteRenderer {
                 float bias = EmoteAnimator.BILLBOARD_BIAS * PX * scale;
                 if (gui) tmp.z += bias;
                 else {
+                    if (lag != null && q.anchor == EmoteDef.Anchor.ABOVE) tmp.add(lag);
                     float len = tmp.length();
                     if (len > 1e-4f) tmp.mul(Math.max(0, 1 - bias / len));
                 }
@@ -88,12 +91,20 @@ public final class EmoteRenderer {
                 m = local.set(anchorM).translate(mx, my, mz);
                 yUp = false;
             }
-            VertexConsumer vc = buf.getBuffer(q.blend == EmoteDef.Blend.ADD ? EmoteRenderTypes.additive(q.tex) : EmoteRenderTypes.translucent(q.tex));
-            emitQuad(vc, m, q, yUp);
+            VertexConsumer vc;
+            int lightUv;
+            if (q.lit && !q.billboard) {
+                vc = buf.getBuffer(EmoteRenderTypes.lit(q.tex));
+                lightUv = light;
+            } else {
+                vc = buf.getBuffer(q.blend == EmoteDef.Blend.ADD ? EmoteRenderTypes.additive(q.tex) : EmoteRenderTypes.translucent(q.tex));
+                lightUv = LightTexture.FULL_BRIGHT;
+            }
+            emitQuad(vc, m, q, yUp, lightUv, q.billboard ? IDENTITY : headN, q.billboard ? 1 : -1);
         }
     }
 
-    private static void emitQuad(VertexConsumer vc, Matrix4f m, Quad q, boolean yUp) {
+    private static void emitQuad(VertexConsumer vc, Matrix4f m, Quad q, boolean yUp, int light, Matrix3f normal, float nz) {
         double r = Math.toRadians(q.rot);
         float cr = (float) Math.cos(r), sr = (float) Math.sin(r);
         float ys = yUp ? 1 : -1;
@@ -106,7 +117,7 @@ public final class EmoteRenderer {
             float x = (lx * cr - ly * sr + q.ox) * PX;
             float y = (lx * sr + ly * cr + q.oy) * PX * ys;
             vc.vertex(m, x, y, 0).color(q.r, q.g, q.b, Math.min(1, q.a)).uv(uv[k][0], uv[k][1])
-                    .overlayCoords(OverlayTexture.NO_OVERLAY).uv2(LightTexture.FULL_BRIGHT).normal(NORMAL, 0, 0, 1).endVertex();
+                    .overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(normal, 0, 0, nz).endVertex();
         }
     }
 
