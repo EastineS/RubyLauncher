@@ -58,7 +58,7 @@ public final class EmotesConfig {
         CHAT_BUTTON = c.comment("Кнопка эмоций рядом с полем ввода чата").define("chatButton", true);
         FAVORITES = c.comment("Избранное для колеса (до 8, по порядку секторов)")
                 .defineListAllowEmpty(List.of("favorites"),
-                        () -> List.of("joy", "laugh", "agree", "disagree", "think", "surprise", "sad", "blush"),
+                        () -> List.of("joy", "laugh", "cry", "love", "shock", "think", "shrug", "angry"),
                         o -> o instanceof String);
         c.pop();
         CLIENT_SPEC = c.build();
