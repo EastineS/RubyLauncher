@@ -9,7 +9,7 @@ import java.util.List;
 
 /** Full emote menu: grid of all emotes, live preview, favourites and the "use" action. */
 public final class EmoteMenuScreen extends Screen {
-    private static final int COLS = 5, GAP = 3;
+    private static final int COLS = 6, GAP = 3;
     private int TILE_W = 46, TILE_H = 48;
     private static String lastSelected;
     private final Screen parent;
@@ -122,10 +122,11 @@ public final class EmoteMenuScreen extends Screen {
             Ui.icon(g, id, tx + (TILE_W - is) / 2, ty + 2 - (int) bounce, is, ok ? 1f : 0.35f);
             Component n = Ui.name(id);
             g.pose().pushPose();
-            float s = 0.55f;
-            g.pose().translate(tx + TILE_W / 2f, ty + TILE_H - 8, 0);
+            // shrink long names to fit instead of cutting them off
+            float s = Math.min(0.55f, (TILE_W - 3) / (float) Math.max(1, font.width(n)));
+            g.pose().translate(tx + TILE_W / 2f, ty + TILE_H - 8 + (0.55f - s) * 4, 0);
             g.pose().scale(s, s, 1);
-            String str = font.plainSubstrByWidth(n.getString(), (int) ((TILE_W - 2) / s));
+            String str = n.getString();
             g.drawString(font, str, -font.width(str) / 2, 0, sel ? Ui.GOLD : Ui.TEXT, false);
             g.pose().popPose();
             int fi = favs.indexOf(id);
