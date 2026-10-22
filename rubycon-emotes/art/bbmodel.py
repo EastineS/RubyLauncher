@@ -51,7 +51,7 @@ def export(eid, em):
         elements.append({"name": name, "type": "cube", "uuid": str(uuid.uuid4()), "from": [lo[0], lo[1] + 28, lo[2]],
                          "to": [hi[0], hi[1] + 28, hi[2]], "origin": [0, 24, 0], "rotation": [0, 0, 0], "faces": faces,
                          "box_uv": False, "rescale": False, "color": 0})
-    quads = anim.evaluate(em, 1.6)
+    quads = anim.evaluate(em, em.get("icon_time", 1.4))
     for n, q in enumerate(quads):
         img = preview.load_tex(q["tex"])
         if img is None:
