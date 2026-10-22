@@ -13,7 +13,6 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 import anim
-from badge import badge
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(ROOT, "..", "mod", "src", "main", "resources", "assets", "rubycon_emotes")
@@ -258,10 +257,11 @@ def background(size):
     return np.broadcast_to(bg, (H, W, 3)).astype(np.float32).copy()
 
 
-def render(em, t, size=(200, 200), yaw=24.0, scale=5.6, cx=None, cy=None, bg=True, opts=None):
-    cam = Cam(size, scale, cx if cx is not None else size[0] * 0.4, cy if cy is not None else size[1] * 0.46, yaw)
+def render(em, t, size=(200, 200), yaw=24.0, scale=5.6, cx=None, cy=None, bg=True, opts=None, player=True):
+    cam = Cam(size, scale, cx if cx is not None else size[0] * 0.3, cy if cy is not None else size[1] * 0.42, yaw)
     fr = Frame(size, background(size) if bg else None)
-    draw_player(fr, cam)
+    if player:
+        draw_player(fr, cam)
     for q in anim.evaluate(em, t, opts or anim.Opts()):
         draw_quad(fr, cam, q)
     return fr
@@ -309,10 +309,25 @@ def timeline(emotes, path, times=(0.1, 0.3, 1.2, 2.6), size=(180, 180)):
     out.save(path, optimize=True)
 
 
+def icon(em, px=64):
+    """Menu icon: the bubble and its face at icon_time, cropped square. Particles are left out."""
+    big = 512
+    parts = dict(em, layers=[l for l in em["layers"] if "mode" not in l and "/s_" not in l["tex"]])
+    img = to_image(render(parts, em.get("icon_time", 1.4), (big, big), yaw=0, scale=26, cx=big * 0.05, cy=big * 0.75,
+                          bg=False, player=False))
+    a = np.asarray(img)[..., 3]
+    ys, xs = np.nonzero(a > 8)
+    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    side = int(max(x1 - x0, y1 - y0) * 1.04) + 2
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    img = img.crop((cx - side // 2, cy - side // 2, cx - side // 2 + side, cy - side // 2 + side))
+    return img.resize((px, px), Image.LANCZOS)
+
+
 def icons(emotes):
     os.makedirs(os.path.join(TEX, "icon"), exist_ok=True)
     for eid, em in emotes:
-        badge(em.get("glyph", "g_dots"), em["color"], 64).save(os.path.join(TEX, "icon", eid + ".png"), optimize=True)
+        icon(em).save(os.path.join(TEX, "icon", eid + ".png"), optimize=True)
 
 
 if __name__ == "__main__":
