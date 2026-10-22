@@ -1,12 +1,14 @@
 package su.rubycon.emotes.net;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.*;
 import net.minecraftforge.network.simple.SimpleChannel;
+import su.rubycon.emotes.EmoteIndex;
 import su.rubycon.emotes.RubyconEmotes;
 import su.rubycon.emotes.server.EmoteServer;
 
@@ -26,7 +28,12 @@ public final class EmoteNetwork {
         static Play dec(FriendlyByteBuf b) { return new Play(b.readUtf(32)); }
         static void handle(Play p, Supplier<NetworkEvent.Context> ctx) {
             ServerPlayer sp = ctx.get().getSender();
-            ctx.get().enqueueWork(() -> { if (sp != null) { if (p.id.isEmpty()) EmoteServer.stop(sp, true); else EmoteServer.play(sp, p.id); } });
+            ctx.get().enqueueWork(() -> {
+                if (sp == null) return;
+                if (p.id.isEmpty()) { EmoteServer.stop(sp, true); return; }
+                String err = EmoteServer.play(sp, p.id);
+                if (err != null) sp.displayClientMessage(Component.translatable(err), true);
+            });
             ctx.get().setPacketHandled(true);
         }
     }
@@ -46,12 +53,12 @@ public final class EmoteNetwork {
     public record Sync(boolean enabled, int cooldownMs, int distance, List<Entry> entries) {
         static void enc(Sync s, FriendlyByteBuf b) {
             b.writeBoolean(s.enabled); b.writeVarInt(s.cooldownMs); b.writeVarInt(s.distance); b.writeVarInt(s.entries.size());
-            for (Entry e : s.entries) { b.writeUtf(e.id, 32); b.writeUtf(e.name, 64); b.writeVarInt(e.durationMs); b.writeBoolean(e.allowed); }
+            for (Entry e : s.entries) { b.writeUtf(e.id, 32); b.writeUtf(e.name, EmoteIndex.MAX_NAME); b.writeVarInt(e.durationMs); b.writeBoolean(e.allowed); }
         }
         static Sync dec(FriendlyByteBuf b) {
             boolean en = b.readBoolean(); int cd = b.readVarInt(); int d = b.readVarInt(); int n = Math.min(b.readVarInt(), 512);
             List<Entry> l = new ArrayList<>();
-            for (int i = 0; i < n; i++) l.add(new Entry(b.readUtf(32), b.readUtf(64), b.readVarInt(), b.readBoolean()));
+            for (int i = 0; i < n; i++) l.add(new Entry(b.readUtf(32), b.readUtf(EmoteIndex.MAX_NAME), b.readVarInt(), b.readBoolean()));
             return new Sync(en, cd, d, l);
         }
         static void handle(Sync s, Supplier<NetworkEvent.Context> ctx) {

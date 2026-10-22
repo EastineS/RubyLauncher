@@ -60,17 +60,20 @@ public final class ClientSetup {
             return;
         }
         long now = System.currentTimeMillis();
+        // a press and release between two ticks leaves isDown() false but still records a click
+        boolean clicked = false;
+        while (EMOTES.consumeClick()) clicked = true;
         if (EMOTES.isDown()) {
             if (pressedAt < 0) pressedAt = now;
             else if (now - pressedAt >= HOLD_MS) {
                 pressedAt = -1;
                 mc.setScreen(new EmoteWheelScreen(EMOTES));
             }
-        } else if (pressedAt >= 0) {
+        } else if (pressedAt >= 0 || clicked) {
             pressedAt = -1;
             mc.setScreen(new EmoteMenuScreen(null));
         }
-        while (EMOTES.consumeClick()) { /* handled via isDown */ }
+        if (mc.screen != null) return;
         while (MENU.consumeClick()) mc.setScreen(new EmoteMenuScreen(null));
         if (WHEEL.isDown() && mc.screen == null) mc.setScreen(new EmoteWheelScreen(WHEEL));
         while (WHEEL.consumeClick()) { }
