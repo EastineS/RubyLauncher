@@ -24,12 +24,18 @@ public final class EmoteAnimator {
         public float px, py, pz, ox, oy, w, h, rot, pvx, pvy, r, g, b, a;
     }
 
+    /** Hard cap on quads per emote per frame, independent of what a definition asks for. */
+    public static final int MAX_QUADS = 1024;
+
     /** Reused quad pool to avoid per-frame garbage. */
     public static final class Out {
         private final List<Quad> pool = new ArrayList<>();
+        private final Quad overflow = new Quad();
         public int size;
         public Quad get(int i) { return pool.get(i); }
+        boolean full() { return size >= MAX_QUADS; }
         Quad next() {
+            if (full()) return overflow;  // written but never drawn
             if (size == pool.size()) pool.add(new Quad());
             return pool.get(size++);
         }
@@ -241,7 +247,7 @@ public final class EmoteAnimator {
             float lt = t - start;
             float fade = end < 1e8f ? sstep(0, 0.3f, lt) * (1 - sstep(end - start - 0.3f, end - start, lt)) : sstep(0, 0.3f, lt);
             float sz = e.psize[0];
-            for (int j = 0; j < e.count; j++) {
+            for (int j = 0; j < e.count && !out.full(); j++) {
                 double ang = Math.toRadians(om * lt + 360.0 * j / e.count);
                 float px = e.pos[0] + (float) Math.cos(ang) * e.radius[0];
                 float pz = e.pos[2] + (float) Math.sin(ang) * e.radius[1];
@@ -260,16 +266,16 @@ public final class EmoteAnimator {
             if (rate <= 0) return;
             int i0 = Math.max(0, (int) Math.floor((t - e.life[1] - start) * rate));
             int i1 = (int) Math.floor((Math.min(t, end) - start) * rate);
-            for (int i = i0; i <= i1; i++) particle(e, t, o, out, i, start + i / rate, bill, sc);
+            for (int i = i0; i <= i1 && !out.full(); i++) particle(e, t, o, out, i, start + i / rate, bill, sc);
         } else {
             int count = e.optional ? Math.max(1, Math.round(e.count * o.budget)) : e.count;
             int bi = 0;
-            for (float bt : e.times) { for (int j = 0; j < count; j++) particle(e, t, o, out, bi * 97 + j, bt, bill, sc); bi++; }
+            for (float bt : e.times) { for (int j = 0; j < count && !out.full(); j++) particle(e, t, o, out, bi * 97 + j, bt, bill, sc); bi++; }
             if (e.every > 0) {
                 float tt = start;
                 // continues numbering after explicit times, matching the python list order
                 while (tt <= end + 1e-6f && bi < 64 + e.times.length) {
-                    for (int j = 0; j < count; j++) particle(e, t, o, out, bi * 97 + j, tt, bill, sc);
+                    for (int j = 0; j < count && !out.full(); j++) particle(e, t, o, out, bi * 97 + j, tt, bill, sc);
                     tt += e.every;
                     bi++;
                 }
