@@ -1,0 +1,154 @@
+{
+  "emotes": [
+    {
+      "id": "cry",
+      "name": "Рыдания",
+      "duration": 6.0
+    },
+    {
+      "id": "laugh",
+      "name": "Ржу",
+      "duration": 5.0
+    },
+    {
+      "id": "joy",
+      "name": "Радость",
+      "duration": 5.0
+    },
+    {
+      "id": "love",
+      "name": "Влюблённость",
+      "duration": 5.5
+    },
+    {
+      "id": "flustered",
+      "name": "Смущение",
+      "duration": 5.0
+    },
+    {
+      "id": "shock",
+      "name": "Шок",
+      "duration": 4.5
+    },
+    {
+      "id": "surprise",
+      "name": "Удивление",
+      "duration": 4.5
+    },
+    {
+      "id": "confused",
+      "name": "Непонимание",
+      "duration": 5.5
+    },
+    {
+      "id": "dizzy",
+      "name": "Головокружение",
+      "duration": 5.0
+    },
+    {
+      "id": "sleepy",
+      "name": "Сон",
+      "duration": 6.5
+    },
+    {
+      "id": "deadpan",
+      "name": "Покерфейс",
+      "duration": 5.5
+    },
+    {
+      "id": "smug",
+      "name": "Хе-хе",
+      "duration": 5.0
+    },
+    {
+      "id": "angry",
+      "name": "Злость",
+      "duration": 5.0
+    },
+    {
+      "id": "rage",
+      "name": "Ярость",
+      "duration": 4.5
+    },
+    {
+      "id": "sad",
+      "name": "Грусть",
+      "duration": 6.0
+    },
+    {
+      "id": "pout",
+      "name": "Обида",
+      "duration": 5.0
+    },
+    {
+      "id": "nervous",
+      "name": "Нервничаю",
+      "duration": 5.0
+    },
+    {
+      "id": "awkward",
+      "name": "Неловко",
+      "duration": 5.0
+    },
+    {
+      "id": "scared",
+      "name": "Страх",
+      "duration": 5.0
+    },
+    {
+      "id": "starstruck",
+      "name": "Восторг",
+      "duration": 5.0
+    },
+    {
+      "id": "hungry",
+      "name": "Вкусняшка",
+      "duration": 5.0
+    },
+    {
+      "id": "wink",
+      "name": "Подмигивание",
+      "duration": 4.5
+    },
+    {
+      "id": "tease",
+      "name": "Бе-бе",
+      "duration": 4.5
+    },
+    {
+      "id": "disgust",
+      "name": "Фу",
+      "duration": 5.0
+    },
+    {
+      "id": "think",
+      "name": "Хмм",
+      "duration": 6.0
+    },
+    {
+      "id": "kiss",
+      "name": "Чмок",
+      "duration": 4.5
+    },
+    {
+      "id": "determined",
+      "name": "Решимость",
+      "duration": 4.5
+    },
+    {
+      "id": "dead",
+      "name": "Помер",
+      "duration": 5.5
+    },
+    {
+      "id": "shrug",
+      "name": "Пофиг",
+      "duration": 4.5
+    },
+    {
+      "id": "uwu",
+      "name": "Умиление",
+      "duration": 5.5
+    }
+  ]
+}
