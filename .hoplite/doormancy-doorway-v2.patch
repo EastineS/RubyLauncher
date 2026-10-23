@@ -1,0 +1,1065 @@
+diff --git a/io/redspace/ironsspellbooks/doormancy/DConfig.java b/io/redspace/ironsspellbooks/doormancy/DConfig.java
+index 16d40d5..bef5fa4 100644
+--- a/io/redspace/ironsspellbooks/doormancy/DConfig.java
++++ b/io/redspace/ironsspellbooks/doormancy/DConfig.java
+@@ -19,6 +19,15 @@ public final class DConfig {
+     public static final ForgeConfigSpec COMMON_SPEC;
+     public static final DoubleValue DOORWAY_COOLDOWN;
+     public static final DoubleValue LEAP_REFUND;
++    public static final BooleanValue TWO_SIDED;
++
++    public static boolean twoSidedDoorways() {
++        try {
++            return TWO_SIDED.get();
++        } catch (Throwable var1) {
++            return true;
++        }
++    }
+ 
+     public static int doorwayCooldownTicks() {
+         try {
+@@ -91,6 +100,8 @@ public final class DConfig {
+             .defineInRange("cooldownSeconds", 0.25, 0.0, 120.0);
+         LEAP_REFUND = c.comment("Share of the mana cost refunded when an existing doorway is leapfrogged (1 = free, 0 = full price).")
+             .defineInRange("leapManaRefund", 0.5, 0.0, 1.0);
++        TWO_SIDED = c.comment("Doorway doors act as one plane with two faces: entering the back of a door leaves through the back of its partner.")
++            .define("twoSided", true);
+         c.pop();
+         COMMON_SPEC = c.build();
+     }
+diff --git a/io/redspace/ironsspellbooks/doormancy/DNet.java b/io/redspace/ironsspellbooks/doormancy/DNet.java
+index 726da58..0b3c9b1 100644
+--- a/io/redspace/ironsspellbooks/doormancy/DNet.java
++++ b/io/redspace/ironsspellbooks/doormancy/DNet.java
+@@ -1,6 +1,11 @@
+ package io.redspace.ironsspellbooks.doormancy;
+ 
++import io.redspace.ironsspellbooks.doormancy.client.DoorRipples;
+ import io.redspace.ironsspellbooks.doormancy.client.DoorTransit;
++import javax.annotation.Nullable;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.player.Player;
+ import io.redspace.ironsspellbooks.doormancy.entity.DoorEntity;
+ import java.util.function.Supplier;
+ import net.minecraft.network.FriendlyByteBuf;
+@@ -15,8 +20,8 @@ import net.minecraftforge.network.NetworkEvent.Context;
+ import net.minecraftforge.network.simple.SimpleChannel;
+ 
+ public final class DNet {
+-    private static final String VERSION = "2";
+-    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(Doormancy.id("doormancy_net"), () -> "2", "2"::equals, "2"::equals);
++    private static final String VERSION = "3";
++    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(Doormancy.id("doormancy_net"), () -> "3", "3"::equals, "3"::equals);
+     private static boolean done;
+ 
+     public static void init() {
+@@ -32,6 +37,11 @@ public final class DNet {
+                 .decoder(DNet.TransitSync::read)
+                 .consumerMainThread(DNet.TransitSync::handle)
+                 .add();
++            CHANNEL.messageBuilder(DNet.Ripple.class, 2, NetworkDirection.PLAY_TO_CLIENT)
++                .encoder(DNet.Ripple::write)
++                .decoder(DNet.Ripple::read)
++                .consumerMainThread(DNet.Ripple::handle)
++                .add();
+         }
+     }
+ 
+@@ -39,9 +49,37 @@ public final class DNet {
+         CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), msg);
+     }
+ 
++    public static void toNearby(Entity at, @Nullable Player exclude, Object msg) {
++        if (at.level() instanceof ServerLevel sl) {
++            for (ServerPlayer sp : sl.players()) {
++                if (sp != exclude && sp.distanceToSqr(at) < 4096.0) {
++                    toPlayer(sp, msg);
++                }
++            }
++        }
++    }
++
+     private DNet() {
+     }
+ 
++    public static record Ripple(int door, float x, float y, int color, float size) {
++        public void write(FriendlyByteBuf b) {
++            b.writeVarInt(this.door);
++            b.writeFloat(this.x);
++            b.writeFloat(this.y);
++            b.writeInt(this.color);
++            b.writeFloat(this.size);
++        }
++
++        public static DNet.Ripple read(FriendlyByteBuf b) {
++            return new DNet.Ripple(b.readVarInt(), b.readFloat(), b.readFloat(), b.readInt(), b.readFloat());
++        }
++
++        public void handle(Supplier<Context> ctx) {
++            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> DoorRipples.add(this.door, this.x, this.y, this.color, this.size));
++        }
++    }
++
+     public static record Transit(int door, double x, double y, double z, float yaw, float pitch, double vx, double vy, double vz) {
+         public void write(FriendlyByteBuf b) {
+             b.writeVarInt(this.door);
+diff --git a/io/redspace/ironsspellbooks/doormancy/client/ClientFx.java b/io/redspace/ironsspellbooks/doormancy/client/ClientFx.java
+index 43be112..6cbf4d4 100644
+--- a/io/redspace/ironsspellbooks/doormancy/client/ClientFx.java
++++ b/io/redspace/ironsspellbooks/doormancy/client/ClientFx.java
+@@ -27,13 +27,16 @@ public final class ClientFx {
+             boolean fresh = clock - lastTransitFx > 20;
+             lastTransitFx = clock;
+             if (fresh && (!(flash > 0.05F) || flashFrame)) {
+-                flash = Math.max(flash, 0.35F);
+-                flashDecay = 0.07F;
++                flash = Math.max(flash, 0.2F);
++                flashDecay = 0.05F;
+                 flashColor = color;
+                 flashFrame = true;
+             }
+ 
+-            fovKick = Math.max(fovKick, (float)Mth.clamp(0.45 + speed * 0.2, 0.45, 1.0) * (fresh ? 1.0F : 0.4F));
++            // Walking through should feel like crossing one plane; only real launches get a FOV kick.
++            if (speed > 0.6) {
++                fovKick = Math.max(fovKick, (float)Mth.clamp((speed - 0.6) * 0.8, 0.0, 1.0) * (fresh ? 1.0F : 0.4F));
++            }
+         }
+     }
+ 
+diff --git a/io/redspace/ironsspellbooks/doormancy/client/DoorRenderer.java b/io/redspace/ironsspellbooks/doormancy/client/DoorRenderer.java
+index 0b0a956..642f6fe 100644
+--- a/io/redspace/ironsspellbooks/doormancy/client/DoorRenderer.java
++++ b/io/redspace/ironsspellbooks/doormancy/client/DoorRenderer.java
+@@ -196,6 +196,12 @@ public class DoorRenderer<T extends DoorEntity> extends GeoEntityRenderer<T> {
+                         v(vc, m, x1 - nx, y1 - ny, z, col, rim, 1.0F, 0.5F);
+                         v(vc, m, x1 + nx, y1 + ny, z, col, rim, 1.0F, 1.0F);
+                         v(vc, m, x0 + nx, y0 + ny, z, col, rim, 0.0F, 1.0F);
++                        if (e.twoSided()) {
++                            v(vc, m, x0 - nx, y0 - ny, -z, col, rim, 0.0F, 0.5F);
++                            v(vc, m, x1 - nx, y1 - ny, -z, col, rim, 1.0F, 0.5F);
++                            v(vc, m, x1 + nx, y1 + ny, -z, col, rim, 1.0F, 0.0F);
++                            v(vc, m, x0 + nx, y0 + ny, -z, col, rim, 0.0F, 0.0F);
++                        }
+                     }
+                 }
+             }
+@@ -227,6 +233,7 @@ public class DoorRenderer<T extends DoorEntity> extends GeoEntityRenderer<T> {
+         }
+ 
+         boolean portalHandles = e.isPortal() && PortalView.handles(e);
++        DoorRipples.render(e, m, buf, pt, K);
+         if (open > 0.01F && !portalHandles) {
+             float k = gate ? 0.95F : (e.isPortal() ? 0.35F : 0.55F);
+             if (gate) {
+@@ -291,7 +298,8 @@ public class DoorRenderer<T extends DoorEntity> extends GeoEntityRenderer<T> {
+                 float oy = cy + Mth.cos((float)ix * 1.713F) * h * 0.3F;
+                 float len = baseLen * (0.7F + 0.3F * Mth.sin(t * 0.07F + (float)ix * 1.3F)) * open;
+                 float flick = 0.55F + 0.45F * Mth.sin(t * 0.21F + (float)ix * 2.1F);
+-                float a = (gate ? 0.2F : 0.14F) * open * flick;
++                // Keep the view through a live portal readable.
++                float a = (gate ? 0.2F : 0.14F) * open * flick * (portalHandles ? 0.3F : 1.0F);
+                 float ex = ox * 1.35F;
+                 float ey = cy + (oy - cy) * 1.35F;
+                 float w0 = gate ? 7.0F : 3.2F;
+diff --git a/io/redspace/ironsspellbooks/doormancy/client/DoorRipples.java b/io/redspace/ironsspellbooks/doormancy/client/DoorRipples.java
+new file mode 100644
+index 0000000..9744577
+--- /dev/null
++++ b/io/redspace/ironsspellbooks/doormancy/client/DoorRipples.java
+@@ -0,0 +1,93 @@
++package io.redspace.ironsspellbooks.doormancy.client;
++
++import com.mojang.blaze3d.vertex.VertexConsumer;
++import io.redspace.ironsspellbooks.doormancy.entity.DoorEntity;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.Iterator;
++import java.util.List;
++import java.util.Map;
++import net.minecraft.client.Minecraft;
++import net.minecraft.client.renderer.MultiBufferSource;
++import net.minecraft.util.Mth;
++import org.joml.Matrix4f;
++
++/** Ripples left on a doorway plane where something passed through, visible on both faces of both doors. */
++public final class DoorRipples {
++    private static final Map<Integer, List<DoorRipples.Ripple>> RIPPLES = new HashMap<>();
++    private static final float LIFE = 20.0F;
++
++    public static void add(int door, float x, float y, int color, float size) {
++        Minecraft mc = Minecraft.getInstance();
++        if (mc.level != null) {
++            long now = mc.level.getGameTime();
++            List<DoorRipples.Ripple> list = RIPPLES.computeIfAbsent(door, k -> new ArrayList<>());
++            if (list.size() >= 8) {
++                list.remove(0);
++            }
++
++            list.add(new DoorRipples.Ripple(x, y, color, size, now));
++            if (RIPPLES.size() > 48) {
++                prune(now);
++            }
++        }
++    }
++
++    private static void prune(long now) {
++        Iterator<List<DoorRipples.Ripple>> it = RIPPLES.values().iterator();
++
++        while (it.hasNext()) {
++            List<DoorRipples.Ripple> l = it.next();
++            l.removeIf(r -> (float)(now - r.start) > LIFE);
++            if (l.isEmpty()) {
++                it.remove();
++            }
++        }
++    }
++
++    static void render(DoorEntity e, Matrix4f m, MultiBufferSource buf, float pt, float glow) {
++        List<DoorRipples.Ripple> list = RIPPLES.get(e.getId());
++        Minecraft mc = Minecraft.getInstance();
++        if (list != null && mc.level != null) {
++            float now = (float)mc.level.getGameTime() + pt;
++            list.removeIf(r -> now - (float)r.start > LIFE || now < (float)r.start - 1.0F);
++            if (list.isEmpty()) {
++                RIPPLES.remove(e.getId());
++            } else {
++                float hw = e.openingHalfWidth();
++                VertexConsumer ring = buf.getBuffer(DRenderTypes.additive(DRenderTypes.SHOCKWAVE));
++                VertexConsumer core = buf.getBuffer(DRenderTypes.additive(DRenderTypes.GLOW));
++
++                for (DoorRipples.Ripple r : list) {
++                    float k = Mth.clamp((now - (float)r.start) / LIFE, 0.0F, 1.0F);
++                    float ease = 1.0F - (1.0F - k) * (1.0F - k) * (1.0F - k);
++                    float rad = (4.0F + hw * 1.1F * ease) * r.size;
++                    float a = (1.0F - k) * (1.0F - k) * 0.9F * glow;
++                    // Two rings, offset to either face, so the ripple reads from both sides of the plane.
++                    quad(ring, m, r.x, r.y, rad, -0.08F, r.color, a);
++                    quad(ring, m, r.x, r.y, rad, 0.08F, r.color, a);
++                    quad(ring, m, r.x, r.y, rad * 0.55F, -0.1F, 16777215, a * 0.5F);
++                    float ca = (1.0F - k) * 0.6F * glow;
++                    quad(core, m, r.x, r.y, (3.0F + 7.0F * (1.0F - k)) * r.size, -0.12F, r.color, ca);
++                }
++            }
++        }
++    }
++
++    private static void quad(VertexConsumer vc, Matrix4f m, float x, float y, float rad, float z, int c, float a) {
++        float rr = (float)(c >> 16 & 0xFF) / 255.0F;
++        float gg = (float)(c >> 8 & 0xFF) / 255.0F;
++        float bb = (float)(c & 0xFF) / 255.0F;
++        float aa = Mth.clamp(a, 0.0F, 1.0F);
++        vc.vertex(m, x - rad, y - rad, z).color(rr, gg, bb, aa).uv(0.0F, 1.0F).endVertex();
++        vc.vertex(m, x + rad, y - rad, z).color(rr, gg, bb, aa).uv(1.0F, 1.0F).endVertex();
++        vc.vertex(m, x + rad, y + rad, z).color(rr, gg, bb, aa).uv(1.0F, 0.0F).endVertex();
++        vc.vertex(m, x - rad, y + rad, z).color(rr, gg, bb, aa).uv(0.0F, 0.0F).endVertex();
++    }
++
++    private DoorRipples() {
++    }
++
++    private static record Ripple(float x, float y, int color, float size, long start) {
++    }
++}
+diff --git a/io/redspace/ironsspellbooks/doormancy/client/DoorTransit.java b/io/redspace/ironsspellbooks/doormancy/client/DoorTransit.java
+index a82b188..ed6ed10 100644
+--- a/io/redspace/ironsspellbooks/doormancy/client/DoorTransit.java
++++ b/io/redspace/ironsspellbooks/doormancy/client/DoorTransit.java
+@@ -54,7 +54,8 @@ public final class DoorTransit {
+                                     if (to != null) {
+                                         Vector3f l = d.crossing(p, pr, cur, motion);
+                                         if (l != null) {
+-                                            travel(mc, p, d, to, d.computeTransit(p, l, to, motion));
++                                            int side = d.crossSide();
++                                            travel(mc, p, d, to, l, side, d.computeTransit(p, l, to, motion, side));
+                                             break;
+                                         }
+                                     }
+@@ -71,11 +72,31 @@ public final class DoorTransit {
+         }
+     }
+ 
+-    private static void travel(Minecraft mc, LocalPlayer p, DoorEntity from, DoorEntity to, DoorEntity.Transit t) {
++    private static void travel(Minecraft mc, LocalPlayer p, DoorEntity from, DoorEntity to, Vector3f hit, int side, DoorEntity.Transit t) {
+         Vec3 f = t.feet();
+         Vec3 v = t.velocity();
+         Vec3 was = p.position();
+         p.moveTo(f.x, f.y, f.z, t.yaw(), t.pitch());
++        if (Math.abs(hit.z * from.pxScale()) < 0.05F) {
++            // Real plane crossing: interpolate this frame from the exit plane instead of freezing, so the camera glides through.
++            double half = (double)p.getBbHeight() * 0.5;
++            Vec3 c = f.add(0.0, half, 0.0);
++            double past = to.planeDistance(c) * (double)side;
++            if (past > 0.0 && past < 0.6) {
++                Vec3 o = c.subtract(to.frontNormal().scale(past * (double)side)).subtract(0.0, half, 0.0);
++                p.xo = o.x;
++                p.yo = o.y;
++                p.zo = o.z;
++                p.xOld = o.x;
++                p.yOld = o.y;
++                p.zOld = o.z;
++            }
++        }
++
++        p.yBob = t.yaw();
++        p.yBobO = t.yaw();
++        p.xBob = t.pitch();
++        p.xBobO = t.pitch();
+         p.yHeadRot = t.yaw();
+         p.yHeadRotO = t.yaw();
+         p.yBodyRot = t.yaw();
+@@ -83,10 +104,13 @@ public final class DoorTransit {
+         p.setDeltaMovement(v);
+         p.fallDistance = 0.0F;
+         DNet.CHANNEL.sendToServer(new DNet.Transit(from.getId(), f.x, f.y, f.z, t.yaw(), t.pitch(), v.x, v.y, v.z));
+-        COOLDOWN.put(from.getId(), clock + 8);
+-        COOLDOWN.put(to.getId(), clock + 8);
++        COOLDOWN.put(from.getId(), clock + 4);
++        COOLDOWN.put(to.getId(), clock + 4);
+         TransitGuard.onTransit(p, from, to);
+         prev = DoorEntity.centre(p);
++        DoorRipples.add(from.getId(), hit.x, hit.y, from.fxColor(), 1.0F);
++        Vector3f outL = to.worldToLocal(prev);
++        DoorRipples.add(to.getId(), outL.x, outL.y, from.fxColor(), 1.0F);
+         SoundEvent whoosh = DRegistry.SND_WHOOSH.get();
+         float pitch = 0.95F + p.getRandom().nextFloat() * 0.15F;
+         mc.level.playLocalSound(was.x, was.y + 1.0, was.z, whoosh, SoundSource.PLAYERS, 0.7F, pitch + 0.15F, false);
+@@ -100,8 +124,8 @@ public final class DoorTransit {
+         if (p != null && mc.level != null) {
+             prev = null;
+             if (accepted) {
+-                COOLDOWN.put(fromId, clock + 8);
+-                COOLDOWN.put(toId, clock + 8);
++                COOLDOWN.put(fromId, clock + 4);
++                COOLDOWN.put(toId, clock + 4);
+                 if (mc.level.getEntity(fromId) instanceof DoorEntity from && mc.level.getEntity(toId) instanceof DoorEntity to) {
+                     TransitGuard.onTransit(p, from, to);
+                     ClientFx.transit(from.fxColor(), speed);
+diff --git a/io/redspace/ironsspellbooks/doormancy/client/PortalView.java b/io/redspace/ironsspellbooks/doormancy/client/PortalView.java
+index d2e291d..14cb563 100644
+--- a/io/redspace/ironsspellbooks/doormancy/client/PortalView.java
++++ b/io/redspace/ironsspellbooks/doormancy/client/PortalView.java
+@@ -1,5 +1,12 @@
+ package io.redspace.ironsspellbooks.doormancy.client;
+ 
++import net.minecraft.client.renderer.LevelRenderer;
++import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
++import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
++import net.minecraft.client.renderer.texture.OverlayTexture;
++import net.minecraft.core.SectionPos;
++import net.minecraft.world.level.block.entity.BlockEntity;
++import net.minecraft.world.level.chunk.LevelChunk;
+ import com.mojang.blaze3d.platform.GlStateManager;
+ import com.mojang.blaze3d.systems.RenderSystem;
+ import com.mojang.blaze3d.vertex.BufferBuilder;
+@@ -62,7 +69,12 @@ public final class PortalView {
+                 return false;
+             } else if (!(d.openness(0.0F) <= 0.01F) && d.partner() != null) {
+                 Vec3 cam = mc.gameRenderer.getMainCamera().getPosition();
+-                return cam.distanceToSqr(d.position()) > 5184.0 ? false : d.worldToLocal(cam).z < -0.5F;
++                if (cam.distanceToSqr(d.position()) > 5184.0) {
++                    return false;
++                } else {
++                    float z = d.worldToLocal(cam).z;
++                    return d.twoSided() ? Math.abs(z) > 0.5F : z < -0.5F;
++                }
+             } else {
+                 return false;
+             }
+@@ -148,6 +160,12 @@ public final class PortalView {
+         Matrix4f viewWorld = new Matrix4f(view).translate((float)(-cam.x), (float)(-cam.y), (float)(-cam.z));
+         Matrix4f polyMat = new Matrix4f(viewWorld).mul(a.frame(true));
+         Matrix4f T = new Matrix4f(a.frame(true)).rotateY((float) Math.PI).mul(new Matrix4f(b.frame(true)).invert());
++        Vector3f camL = a.worldToLocal(cam);
++        int side = camL.z <= 0.0F ? 1 : -1;
++        // Near the plane the opening quad falls behind the near clip plane; extrude it into a shallow box so the stencil survives.
++        float prism = Math.abs(camL.z * a.pxScale()) < 0.45F && a.insideOpening(camL.x, Math.max(camL.y, a.thresholdY() + 0.5F))
++            ? (float)side * 0.4F / a.pxScale()
++            : 0.0F;
+         RenderSystem.disableCull();
+         RenderSystem.enableDepthTest();
+         GL11.glEnable(2960);
+@@ -159,7 +177,7 @@ public final class PortalView {
+         RenderSystem.colorMask(false, false, false, false);
+         RenderSystem.depthMask(false);
+         RenderSystem.depthFunc(515);
+-        drawOpening(polyMat, a, 16777215, 16777215, 1.0F);
++        drawOpening(polyMat, a, 16777215, 16777215, 1.0F, prism);
+         RenderSystem.stencilFunc(514, 1, 255);
+         RenderSystem.stencilOp(7680, 7680, 7680);
+         RenderSystem.colorMask(true, true, true, true);
+@@ -170,19 +188,19 @@ public final class PortalView {
+         float[] fog = RenderSystem.getShaderFogColor();
+         int skyC = rgb(sky.x, sky.y, sky.z);
+         int fogC = rgb((double)fog[0], (double)fog[1], (double)fog[2]);
+-        drawOpening(polyMat, a, skyC, fogC, 1.0F);
++        drawOpening(polyMat, a, skyC, fogC, 1.0F, prism);
+         GL11.glDepthRange(0.0, 1.0);
+         RenderSystem.depthFunc(515);
+         Matrix4f content = new Matrix4f(viewWorld).mul(T);
+         Matrix4f proj = e.getProjectionMatrix();
+-        Matrix4f clip = oblique(proj, view, a, cam);
+-        renderBlocks(mc, level, b, content, clip);
++        Matrix4f clip = oblique(proj, view, a, cam, side);
++        renderBlocks(mc, level, b, content, clip, side);
+         Matrix4f savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
+         VertexSorting sorting = RenderSystem.getVertexSorting();
+         RenderSystem.setProjectionMatrix(clip, sorting);
+ 
+         try {
+-            renderEntities(mc, level, camera, b, view, T, pt);
++            renderEntities(mc, level, camera, b, view, T, pt, side);
+         } finally {
+             RenderSystem.setProjectionMatrix(savedProj, sorting);
+         }
+@@ -211,7 +229,7 @@ public final class PortalView {
+             a.openingHalfWidth(),
+             h,
+             a.fxColor(),
+-            open * 0.22F,
++            open * 0.14F,
+             0.0F,
+             t * 0.015F,
+             1.0F,
+@@ -232,18 +250,19 @@ public final class PortalView {
+             1.0F,
+             0.0F
+         );
++        membrane(buf, polyMat, a, open, t, side);
+         buf.endBatch();
+         RenderSystem.colorMask(false, false, false, false);
+         RenderSystem.depthMask(true);
+         RenderSystem.depthFunc(519);
+-        drawOpening(polyMat, a, 0, 0, 1.0F);
++        drawOpening(polyMat, a, 0, 0, 1.0F, prism);
+         RenderSystem.depthFunc(515);
+         RenderSystem.colorMask(true, true, true, true);
+         GlStateManager._clear(1024, Minecraft.ON_OSX);
+     }
+ 
+-    static Matrix4f oblique(Matrix4f proj, Matrix4f view, DoorEntity a, Vec3 cam) {
+-        Vec3 back = a.frontNormal().scale(-1.0);
++    static Matrix4f oblique(Matrix4f proj, Matrix4f view, DoorEntity a, Vec3 cam, int side) {
++        Vec3 back = a.frontNormal().scale((double)(-side));
+         Vec3 rel = a.position().subtract(cam);
+         Vector3f pv = view.transformPosition(new Vector3f((float)rel.x, (float)rel.y, (float)rel.z));
+         Vector3f nv = view.transformDirection(new Vector3f((float)back.x, (float)back.y, (float)back.z)).normalize();
+@@ -279,7 +298,7 @@ public final class PortalView {
+         return (int)(Mth.clamp(r, 0.0, 1.0) * 255.0) << 16 | (int)(Mth.clamp(g, 0.0, 1.0) * 255.0) << 8 | (int)(Mth.clamp(b, 0.0, 1.0) * 255.0);
+     }
+ 
+-    private static void drawOpening(Matrix4f m, DoorEntity d, int topC, int bottomC, float alpha) {
++    private static void drawOpening(Matrix4f m, DoorEntity d, int topC, int bottomC, float alpha, float prism) {
+         float[] px = d.polyX();
+         float[] py = d.polyY();
+         float top = 0.0F;
+@@ -297,14 +316,71 @@ public final class PortalView {
+ 
+         for (int i = 0; i < px.length; i++) {
+             int j = (i + 1) % px.length;
++            float ki = (py[i] - bottom) / (top - bottom);
++            float kj = (py[j] - bottom) / (top - bottom);
+             col(bb.vertex(m, 0.0F, cy, 0.0F), topC, bottomC, (cy - bottom) / (top - bottom), alpha).endVertex();
+-            col(bb.vertex(m, px[i], py[i], 0.0F), topC, bottomC, (py[i] - bottom) / (top - bottom), alpha).endVertex();
+-            col(bb.vertex(m, px[j], py[j], 0.0F), topC, bottomC, (py[j] - bottom) / (top - bottom), alpha).endVertex();
++            col(bb.vertex(m, px[i], py[i], 0.0F), topC, bottomC, ki, alpha).endVertex();
++            col(bb.vertex(m, px[j], py[j], 0.0F), topC, bottomC, kj, alpha).endVertex();
++            if (prism != 0.0F) {
++                col(bb.vertex(m, 0.0F, cy, prism), topC, bottomC, (cy - bottom) / (top - bottom), alpha).endVertex();
++                col(bb.vertex(m, px[i], py[i], prism), topC, bottomC, ki, alpha).endVertex();
++                col(bb.vertex(m, px[j], py[j], prism), topC, bottomC, kj, alpha).endVertex();
++                col(bb.vertex(m, px[i], py[i], 0.0F), topC, bottomC, ki, alpha).endVertex();
++                col(bb.vertex(m, px[j], py[j], 0.0F), topC, bottomC, kj, alpha).endVertex();
++                col(bb.vertex(m, px[j], py[j], prism), topC, bottomC, kj, alpha).endVertex();
++                col(bb.vertex(m, px[i], py[i], 0.0F), topC, bottomC, ki, alpha).endVertex();
++                col(bb.vertex(m, px[j], py[j], prism), topC, bottomC, kj, alpha).endVertex();
++                col(bb.vertex(m, px[i], py[i], prism), topC, bottomC, ki, alpha).endVertex();
++            }
+         }
+ 
+         BufferUploader.drawWithShader(bb.end());
+     }
+ 
++    /** Soft glowing inner edge with slow travelling shimmer: reads as a liquid surface while leaving the centre clear. */
++    private static void membrane(BufferSource buf, Matrix4f m, DoorEntity d, float open, float t, int side) {
++        if (!(open <= 0.01F)) {
++            float[] px = d.polyX();
++            float[] py = d.polyY();
++            float bottom = Float.MAX_VALUE;
++
++            for (float y : py) {
++                bottom = Math.min(bottom, y);
++            }
++
++            float cy = d.centerY();
++            float width = Math.max(2.5F, d.openingHalfWidth() * 0.28F);
++            float z = (float)(-side) * 0.06F;
++            int c = d.fxColor();
++            float r = (float)(c >> 16 & 0xFF) / 255.0F;
++            float g = (float)(c >> 8 & 0xFF) / 255.0F;
++            float b = (float)(c & 0xFF) / 255.0F;
++            float glow = DConfig.glow();
++            VertexConsumer vc = buf.getBuffer(DRenderTypes.additive(DRenderTypes.GLOW));
++
++            for (int i = 0; i < px.length; i++) {
++                int j = (i + 1) % px.length;
++                if (py[i] != bottom || py[j] != bottom) {
++                    float ai = open * glow * (0.55F + 0.45F * Mth.sin(t * 0.12F + (float)i * 0.9F));
++                    float aj = open * glow * (0.55F + 0.45F * Mth.sin(t * 0.12F + (float)j * 0.9F));
++                    float[] ii = inset(px[i], py[i], cy, width);
++                    float[] jj = inset(px[j], py[j], cy, width);
++                    vc.vertex(m, px[i], py[i], z).color(r, g, b, Mth.clamp(ai, 0.0F, 1.0F)).uv(0.5F, 0.5F).endVertex();
++                    vc.vertex(m, px[j], py[j], z).color(r, g, b, Mth.clamp(aj, 0.0F, 1.0F)).uv(0.5F, 0.5F).endVertex();
++                    vc.vertex(m, jj[0], jj[1], z).color(r, g, b, 0.0F).uv(0.5F, 0.5F).endVertex();
++                    vc.vertex(m, ii[0], ii[1], z).color(r, g, b, 0.0F).uv(0.5F, 0.5F).endVertex();
++                }
++            }
++        }
++    }
++
++    private static float[] inset(float x, float y, float cy, float w) {
++        float dx = -x;
++        float dy = cy - y;
++        float len = Mth.sqrt(dx * dx + dy * dy);
++        return len < w ? new float[]{0.0F, cy} : new float[]{x + dx / len * w, y + dy / len * w};
++    }
++
+     private static VertexConsumer col(VertexConsumer v, int top, int bottom, float k, float a) {
+         float r = Mth.lerp(k, (float)(bottom >> 16 & 0xFF) / 255.0F, (float)(top >> 16 & 0xFF) / 255.0F);
+         float g = Mth.lerp(k, (float)(bottom >> 8 & 0xFF) / 255.0F, (float)(top >> 8 & 0xFF) / 255.0F);
+@@ -312,11 +388,11 @@ public final class PortalView {
+         return v.color(r, g, b, a);
+     }
+ 
+-    private static void renderBlocks(Minecraft mc, ClientLevel level, DoorEntity b, Matrix4f content, Matrix4f proj) {
+-        PortalView.Mesh mesh = MESHES.computeIfAbsent(b.getId(), k -> new PortalView.Mesh());
++    private static void renderBlocks(Minecraft mc, ClientLevel level, DoorEntity b, Matrix4f content, Matrix4f proj, int side) {
++        PortalView.Mesh mesh = MESHES.computeIfAbsent(side == 1 ? b.getId() : -b.getId() - 1, k -> new PortalView.Mesh());
+         int now = b.tickCount;
+         if (now - mesh.builtAt > 40 || mesh.builtAt > now) {
+-            build(mc, level, b, mesh);
++            build(mc, level, b, mesh, side);
+         }
+ 
+         if (mesh.origin != null) {
+@@ -343,11 +419,12 @@ public final class PortalView {
+         }
+     }
+ 
+-    private static void build(Minecraft mc, ClientLevel level, DoorEntity b, PortalView.Mesh mesh) {
++    private static void build(Minecraft mc, ClientLevel level, DoorEntity b, PortalView.Mesh mesh, int side) {
+         mesh.close();
+         mesh.builtAt = b.tickCount;
+         int depth = DConfig.PORTAL_DEPTH.get();
+-        Vec3 n = b.frontNormal();
++        Vec3 n = b.frontNormal().scale((double)side);
++        double baseY = b.position().y;
+         Vec3 c = b.isFlat() ? b.position() : b.position().add(0.0, 1.0, 0.0);
+         BlockPos origin = BlockPos.containing(c);
+         mesh.origin = origin;
+@@ -362,8 +439,10 @@ public final class PortalView {
+             for (int dy = -lat; dy <= lat; dy++) {
+                 for (int dz = -lat; dz <= lat; dz++) {
+                     double fwd = (double)dx * n.x + (double)dy * n.y + (double)dz * n.z;
+-                    if (!(fwd < 0.2) && !(fwd > (double)depth) && (b.isFlat() || dy >= -4 && dy <= up)) {
+-                        BlockPos pos = origin.offset(dx, dy, dz);
++                    BlockPos pos = origin.offset(dx, dy, dz);
++                    // Ground under the threshold sits in the door's own block column; without it the view shows a gap at the floor.
++                    boolean floor = !b.isFlat() && fwd > -1.2 && (double)(pos.getY() + 1) <= baseY + 0.01;
++                    if ((!(fwd < 0.2) || floor) && !(fwd > (double)depth) && (b.isFlat() || dy >= -4 && dy <= up)) {
+                         BlockState st = level.getBlockState(pos);
+                         if (!st.isAir()) {
+                             FluidState fs = st.getFluidState();
+@@ -413,7 +492,7 @@ public final class PortalView {
+         return bb;
+     }
+ 
+-    private static void renderEntities(Minecraft mc, ClientLevel level, Camera camera, DoorEntity b, Matrix4f view, Matrix4f T, float pt) {
++    private static void renderEntities(Minecraft mc, ClientLevel level, Camera camera, DoorEntity b, Matrix4f view, Matrix4f T, float pt, int side) {
+         int depth = DConfig.PORTAL_DEPTH.get();
+         AABB box = new AABB(b.position(), b.position()).inflate((double)depth);
+         EntityRenderDispatcher erd = mc.getEntityRenderDispatcher();
+@@ -429,7 +508,7 @@ public final class PortalView {
+             if ((en != camera.getEntity() || camera.isDetached() || !(en.position().distanceToSqr(b.position()) < 2.5)) && !en.isInvisible()) {
+                 Vec3 p = en.getPosition(pt);
+                 Vector3f l = b.worldToLocal(p.add(0.0, (double)en.getBbHeight() * 0.5, 0.0));
+-                if (l.z < 1.25F) {
++                if (l.z * (float)side < 1.25F) {
+                     float yaw = Mth.lerp(pt, en.yRotO, en.getYRot());
+                     erd.render(en, p.x, p.y, p.z, yaw, pt, ps, buf, erd.getPackedLightCoords(en, pt));
+                     any = true;
+@@ -437,6 +516,41 @@ public final class PortalView {
+             }
+         }
+ 
++        BlockEntityRenderDispatcher bed = mc.getBlockEntityRenderDispatcher();
++        Vec3 n = b.frontNormal().scale((double)side);
++        int cx0 = SectionPos.blockToSectionCoord(box.minX);
++        int cx1 = SectionPos.blockToSectionCoord(box.maxX);
++        int cz0 = SectionPos.blockToSectionCoord(box.minZ);
++        int cz1 = SectionPos.blockToSectionCoord(box.maxZ);
++
++        for (int cx = cx0; cx <= cx1; cx++) {
++            for (int cz = cz0; cz <= cz1; cz++) {
++                LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
++                if (chunk != null) {
++                    for (BlockEntity be : chunk.getBlockEntities().values()) {
++                        BlockPos bp = be.getBlockPos();
++                        Vec3 rel = Vec3.atCenterOf(bp).subtract(b.position());
++                        double fwd = rel.dot(n);
++                        if (box.contains(Vec3.atCenterOf(bp)) && fwd > 0.0) {
++                            BlockEntityRenderer<BlockEntity> r = bed.getRenderer(be);
++                            if (r != null) {
++                                ps.pushPose();
++                                ps.translate((double)bp.getX(), (double)bp.getY(), (double)bp.getZ());
++
++                                try {
++                                    r.render(be, pt, ps, buf, LevelRenderer.getLightColor(level, bp), OverlayTexture.NO_OVERLAY);
++                                    any = true;
++                                } catch (Exception var30) {
++                                } finally {
++                                    ps.popPose();
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++
+         if (any) {
+             buf.endBatch();
+         }
+diff --git a/io/redspace/ironsspellbooks/doormancy/entity/DoorEntity.java b/io/redspace/ironsspellbooks/doormancy/entity/DoorEntity.java
+index 6b914f1..a2a73c3 100644
+--- a/io/redspace/ironsspellbooks/doormancy/entity/DoorEntity.java
++++ b/io/redspace/ironsspellbooks/doormancy/entity/DoorEntity.java
+@@ -95,6 +95,7 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+     protected final Map<Integer, Vec3> lastPos = new HashMap<>();
+     protected final Map<Integer, Integer> travelCooldown = new HashMap<>();
+     protected final Map<Integer, Integer> contact = new HashMap<>();
++    protected final Map<Integer, Vector3f> pendingHit = new HashMap<>();
+     private int lifeSyncTick;
+     protected double lastTravelSpeed;
+ 
+@@ -570,54 +571,118 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+         return this.insideOpening(l.x, this.isFlat() ? l.y : Math.max(l.y, this.thresholdY() + 1.0F));
+     }
+ 
++    /** Doorway doors are a single two-faced plane: walking into the back of one leaves through the back of its partner. */
++    public boolean twoSided() {
++        return false;
++    }
++
++    /** +1 = entered through the front face, -1 = through the back face. Set by crossing()/catchProjectile(). */
++    protected int crossSide = 1;
++
++    public int crossSide() {
++        return this.crossSide;
++    }
++
++    public int sideOf(Entity e, Vec3 motion) {
++        if (!this.twoSided()) {
++            return 1;
++        } else {
++            double approach = -motion.dot(this.frontNormal());
++            if (Math.abs(approach) > 0.01) {
++                return approach > 0.0 ? 1 : -1;
++            } else {
++                return this.planeDistance(centre(e)) >= 0.0 ? 1 : -1;
++            }
++        }
++    }
++
++    private boolean blockedBehind(Entity e, Vec3 nSide, double ds) {
++        return !this.level().noCollision(e, e.getBoundingBox().move(nSide.scale(-(ds + 0.05))));
++    }
++
++    private static boolean pressing(Entity e, Vec3 nSide, double approach) {
++        if (approach > 0.02) {
++            return true;
++        } else if (Math.abs(nSide.y) < 0.5) {
++            return e.horizontalCollision && e.getLookAngle().dot(nSide) < -0.3;
++        } else {
++            return nSide.y > 0.5 ? e.onGround() || e.getDeltaMovement().y <= 0.0 : e.verticalCollision && e.getDeltaMovement().y >= 0.0;
++        }
++    }
++
+     @Nullable
+     public Vector3f crossing(Entity e, @Nullable Vec3 prev, Vec3 cur, Vec3 motion) {
+-        float s = this.pxScale();
+         Vec3 n = this.frontNormal();
+-        Vector3f l = this.worldToLocal(cur);
+-        double d = (double)(-l.z * s);
+-        double approach = -motion.dot(n);
++        double d = this.planeDistance(cur);
++        int sides = this.twoSided() ? 2 : 1;
+         if (fastMover(e)) {
+-            if (!(approach <= 0.001) && !(d < -0.4) && !(d - approach * 1.05 > 0.06)) {
+-                double t = Math.max(0.0, d) / approach;
+-                Vector3f lh = this.worldToLocal(cur.add(motion.scale(t)));
+-                return this.insideOpening(lh.x, lh.y) ? lh : null;
+-            } else {
+-                return null;
++            for (int i = 0; i < sides; i++) {
++                int side = i == 0 ? 1 : -1;
++                double ds = d * side;
++                double approach = -motion.dot(n) * side;
++                if (approach > 0.001 && ds >= -0.4 && ds - approach * 1.05 <= 0.06) {
++                    double t = Math.max(0.0, ds) / approach;
++                    Vector3f lh = this.worldToLocal(cur.add(motion.scale(t)));
++                    if (this.insideOpening(lh.x, lh.y)) {
++                        this.crossSide = side;
++                        return lh;
++                    }
++                }
+             }
++
++            return null;
+         } else {
+-            double ext = halfExtent(e, n);
+-            if (prev != null && approach > 0.2 && d < -0.6) {
+-                double dp = (double)(-this.worldToLocal(prev).z * s);
+-                if (dp >= -0.05 && dp - d > 1.0E-4) {
++            // The body centre passing through the plane between two ticks is the actual crossing.
++            if (prev != null) {
++                double dp = this.planeDistance(prev);
++                boolean front = dp > 0.0 && d <= 0.0;
++                boolean back = sides == 2 && dp < 0.0 && d >= 0.0;
++                if ((front || back) && Math.abs(dp - d) > 1.0E-4 && Math.abs(dp) < 3.0) {
+                     double k = Mth.clamp(dp / (dp - d), 0.0, 1.0);
+                     Vector3f lh = this.worldToLocal(prev.add(cur.subtract(prev).scale(k)));
+-                    return this.bodyFits(lh) ? lh : null;
++                    if (this.bodyFits(lh)) {
++                        this.crossSide = front ? 1 : -1;
++                        return lh;
++                    }
+                 }
+             }
+ 
+-            if (!(d > ext + 0.2) && !(d < -0.6) && !(approach < -0.03)) {
+-                return this.bodyFits(l) ? l : null;
+-            } else {
+-                return null;
++            // Doors on walls / floors: the body can never reach the plane, so touching it while blocked counts.
++            double ext = halfExtent(e, n);
++            Vector3f l = this.worldToLocal(cur);
++            for (int i = 0; i < sides; i++) {
++                int side = i == 0 ? 1 : -1;
++                double ds = d * side;
++                Vec3 nSide = n.scale((double)side);
++                if (ds > 0.0 && ds <= ext + 0.08 && pressing(e, nSide, -motion.dot(nSide)) && this.bodyFits(l) && this.blockedBehind(e, nSide, ds)) {
++                    this.crossSide = side;
++                    return l;
++                }
+             }
++
++            return null;
+         }
+     }
+ 
+     public DoorEntity.Transit computeTransit(Entity e, Vector3f l, DoorEntity to, Vec3 motion) {
++        return this.computeTransit(e, l, to, motion, this.crossSide);
++    }
++
++    public DoorEntity.Transit computeTransit(Entity e, Vector3f l, DoorEntity to, Vec3 motion, int side) {
+         boolean proj = fastMover(e);
+         float sTo = to.pxScale();
+-        Vec3 nTo = to.frontNormal();
++        Vec3 nOut = to.frontNormal().scale((double)side);
+         double speed = motion.length();
+-        Vec3 dirOut = this.mapDirection(speed < 1.0E-4 ? this.frontNormal().scale(-1.0) : motion.scale(1.0 / speed), to);
++        Vec3 dirOut = this.mapDirection(speed < 1.0E-4 ? this.frontNormal().scale((double)(-side)) : motion.scale(1.0 / speed), to);
+         Vec3 vOut = dirOut.scale(speed);
+-        double outN = vOut.dot(nTo);
+-        double minOut = proj ? 0.05 : 0.34;
++        double outN = vOut.dot(nOut);
++        double minOut = proj ? 0.05 : 0.06;
+         if (outN < minOut) {
+-            vOut = vOut.add(nTo.scale(minOut - outN));
++            vOut = vOut.add(nOut.scale(minOut - outN));
+         }
+ 
+-        if (!proj && nTo.y > 0.5) {
++        if (!proj && nOut.y > 0.5) {
++            // Leaving an upward-facing door: lift clear of the opening so we do not drop straight back in.
+             if (vOut.y < 0.42) {
+                 vOut = new Vec3(vOut.x, 0.42, vOut.z);
+             }
+@@ -642,33 +707,53 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+         }
+ 
+         float hw = to.openingHalfWidth();
+-        float x = Mth.clamp(-l.x, -hw * 0.6F, hw * 0.6F);
++        float x;
+         float y;
+         if (proj) {
++            x = -l.x;
+             y = l.y;
+             if (!to.insideOpening(x, y)) {
+                 x = 0.0F;
+                 y = to.centerY();
+             }
+-        } else if (to.isFlat()) {
+-            y = Mth.clamp(l.y, to.thresholdY() + 6.0F, to.centerY() + 6.0F);
+-            if (!to.insideOpening(x, y)) {
+-                x = 0.0F;
+-                y = to.centerY();
++        } else {
++            float bodyHalf = (float)((double)e.getBbWidth() * 0.5 / (double)sTo);
++            float xr = Math.max(0.0F, hw - bodyHalf);
++            x = Mth.clamp(-l.x * this.pxScale() / sTo, -xr, xr);
++            if (to.isFlat()) {
++                y = Mth.clamp(l.y, to.thresholdY() + 6.0F, to.centerY() + 6.0F);
++                if (!to.insideOpening(x, y)) {
++                    x = 0.0F;
++                    y = to.centerY();
++                }
++            } else {
++                float minY = to.thresholdY() + (float)((double)e.getBbHeight() * 0.5 / (double)sTo);
++                if (this.isFlat()) {
++                    y = minY + 0.4F;
++                } else {
++                    // Same height in the frame on both sides: a jump through stays a jump.
++                    y = Math.max(minY, (l.y - this.thresholdY()) * this.pxScale() / sTo + to.thresholdY());
++                }
+             }
++        }
++
++        double ext = halfExtent(e, nOut);
++        double depth;
++        if (proj) {
++            depth = 0.3;
+         } else {
+-            y = to.thresholdY() + (float)((double)e.getBbHeight() * 0.5 / (double)sTo) + 0.4F;
++            double now = this.planeDistance(centre(e)) * (double)side;
++            depth = now <= 0.001 ? Math.min(-now, ext) + 0.01 : ext + 0.02;
+         }
+ 
+-        float zOut = -((float)((proj ? 0.3 : halfExtent(e, nTo) + 0.18) / (double)sTo));
+-        Vec3 c = to.localToWorld(x, y, zOut);
++        Vec3 c = to.localToWorld(x, y, (float)(-side * depth / (double)sTo));
+         Vec3 feet = c.subtract(0.0, (double)e.getBbHeight() * 0.5, 0.0);
+         if (!proj) {
+-            feet = to.freeSpot(e, feet, nTo);
++            feet = to.freeSpot(e, feet, nOut, Math.max(0.0, ext + 0.3 - depth));
+         }
+ 
+         Vec3 look = this.mapDirection(e.getLookAngle(), to);
+-        float yaw = DUtil.yawOf(new Vec3(look.x, 0.0, look.z).lengthSqr() < 1.0E-4 ? (Math.abs(nTo.y) > 0.5 ? DUtil.forward(e.getYRot()) : nTo) : look);
++        float yaw = DUtil.yawOf(new Vec3(look.x, 0.0, look.z).lengthSqr() < 1.0E-4 ? (Math.abs(nOut.y) > 0.5 ? DUtil.forward(e.getYRot()) : nOut) : look);
+         float pitch = (float)(-Math.asin(Mth.clamp(look.y, -1.0, 1.0)) * 180.0 / (float) Math.PI);
+         if (proj) {
+             yaw = (float)(Mth.atan2(vOut.x, vOut.z) * 180.0 / (float) Math.PI);
+@@ -696,20 +781,28 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+                     boolean player = e instanceof ServerPlayer;
+                     Vec3 motion = player ? (prev == null ? Vec3.ZERO : c.subtract(prev)) : e.getDeltaMovement();
+                     Vector3f hit = this.crossing(e, prev, c, motion);
+-                    if (hit == null) {
+-                        if (player) {
+-                            this.contact.remove(id);
+-                        }
+-                    } else {
+-                        if (player) {
+-                            int k = this.contact.merge(id, 1, Integer::sum);
+-                            if (k < 4) {
+-                                continue;
++                    if (player) {
++                        // Players normally travel via their own predicted request; this is the fallback if none arrives.
++                        if (hit != null && !this.contact.containsKey(id)) {
++                            this.contact.put(id, this.tickCount);
++                            this.pendingHit.put(id, new Vector3f(hit.x, hit.y, (float)this.crossSide));
++                        } else if (hit == null && this.contact.containsKey(id)) {
++                            int age = this.tickCount - this.contact.get(id);
++                            Vector3f ph = this.pendingHit.get(id);
++                            if (age > 12 || ph == null) {
++                                this.contact.remove(id);
++                                this.pendingHit.remove(id);
++                            } else if (age >= 4) {
++                                int side = ph.z < 0.0F ? -1 : 1;
++                                double ds = this.planeDistance(c) * (double)side;
++                                this.contact.remove(id);
++                                this.pendingHit.remove(id);
++                                if (ds < halfExtent(e, this.frontNormal()) + 0.15 && ds > -1.5 && TransitGuard.inFootprint(e, this)) {
++                                    this.applyTransit(e, this.computeTransit(e, new Vector3f(ph.x, ph.y, 0.0F), to, motion, side), to, false);
++                                }
+                             }
+-
+-                            this.contact.remove(id);
+                         }
+-
++                    } else if (hit != null) {
+                         this.sendThrough(e, hit, to, motion);
+                     }
+                 }
+@@ -719,6 +812,7 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+         if (this.tickCount % 40 == 0) {
+             this.lastPos.keySet().removeIf(idx -> this.level().getEntity(idx) == null);
+             this.contact.keySet().removeIf(idx -> this.level().getEntity(idx) == null);
++            this.pendingHit.keySet().removeIf(idx -> !this.contact.containsKey(idx));
+             this.travelCooldown.values().removeIf(t -> t < this.tickCount);
+         }
+     }
+@@ -737,7 +831,7 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+     }
+ 
+     public void sendThrough(Entity e, Vector3f l, DoorEntity to, Vec3 motion) {
+-        this.applyTransit(e, this.computeTransit(e, l, to, motion), to, false);
++        this.applyTransit(e, this.computeTransit(e, l, to, motion, this.sideOf(e, motion)), to, false);
+     }
+ 
+     protected boolean boostsProjectiles() {
+@@ -813,7 +907,9 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+         to.lastPos.put(e.getId(), now);
+         this.contact.remove(e.getId());
+         to.contact.remove(e.getId());
+-        int cdT = proj ? 3 : 8;
++        this.pendingHit.remove(e.getId());
++        to.pendingHit.remove(e.getId());
++        int cdT = proj ? 3 : 4;
+         to.travelCooldown.put(e.getId(), to.tickCount + cdT);
+         this.travelCooldown.put(e.getId(), this.tickCount + cdT);
+         float vol = proj ? 0.45F : 0.8F;
+@@ -831,6 +927,15 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+         }
+ 
+         TransitGuard.onTransit(e, this, to);
++        if (!this.level().isClientSide) {
++            Vector3f inL = this.worldToLocal(from);
++            Vector3f outL = to.worldToLocal(now);
++            int col = this.fxColor();
++            float size = proj ? 0.5F : 1.0F;
++            DNet.toNearby(this, exclude, new DNet.Ripple(this.getId(), inL.x, inL.y, col, size));
++            DNet.toNearby(to, exclude, new DNet.Ripple(to.getId(), outL.x, outL.y, col, size));
++        }
++
+         this.lastTravelSpeed = vOut.length();
+         this.onTravel(e, to);
+     }
+@@ -896,7 +1001,27 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+     }
+ 
+     protected Vec3 freeSpot(Entity e, Vec3 feet, Vec3 n) {
++        return this.freeSpot(e, feet, n, 1.75);
++    }
++
++    /** Smallest correction that frees the body: slide out along the normal first, then step up, then search wider. */
++    protected Vec3 freeSpot(Entity e, Vec3 feet, Vec3 n, double maxOut) {
+         AABB bb = e.getBoundingBox();
++        int steps = Math.max(1, (int)Math.ceil(maxOut / 0.05));
++
++        for (int i = 0; i <= steps; i++) {
++            Vec3 p = feet.add(n.scale(Math.min(maxOut, (double)i * 0.05)));
++            if (this.level().noCollision(e, bb.move(p.subtract(e.position())))) {
++                return p;
++            }
++        }
++
++        for (int k = 1; k <= 10; k++) {
++            Vec3 q = feet.add(0.0, (double)k * 0.0625, 0.0);
++            if (this.level().noCollision(e, bb.move(q.subtract(e.position())))) {
++                return q;
++            }
++        }
+ 
+         for (int i = 0; i < 8; i++) {
+             Vec3 p = feet.add(n.scale((double)i * 0.25));
+@@ -923,13 +1048,13 @@ public abstract class DoorEntity extends Entity implements GeoEntity {
+                     Integer cd = d.travelCooldown.get(p.getId());
+                     if ((cd == null || cd <= d.tickCount) && !TransitGuard.blocked(p, d)) {
+                         Vector3f l = d.worldToLocal(hit);
+-                        double dist = (double)(-l.z * d.pxScale());
+-                        if (!(dist < -0.75) && !(dist > 0.6) && d.insideOpening(l.x, l.y)) {
+-                            Vec3 v = p.getDeltaMovement();
+-                            if (!(v.dot(d.frontNormal()) >= 0.0)) {
+-                                d.sendThrough(p, l, to, v);
+-                                return true;
+-                            }
++                        Vec3 v = p.getDeltaMovement();
++                        int side = v.dot(d.frontNormal()) < 0.0 ? 1 : -1;
++                        double dist = (double)(-l.z * d.pxScale()) * (double)side;
++                        if ((side == 1 || d.twoSided()) && !(dist < -0.75) && !(dist > 0.6) && d.insideOpening(l.x, l.y) && v.lengthSqr() > 1.0E-8) {
++                            d.crossSide = side;
++                            d.sendThrough(p, l, to, v);
++                            return true;
+                         }
+                     }
+                 }
+diff --git a/io/redspace/ironsspellbooks/doormancy/entity/DoorwayDoor.java b/io/redspace/ironsspellbooks/doormancy/entity/DoorwayDoor.java
+index f64f901..901bcd8 100644
+--- a/io/redspace/ironsspellbooks/doormancy/entity/DoorwayDoor.java
++++ b/io/redspace/ironsspellbooks/doormancy/entity/DoorwayDoor.java
+@@ -1,5 +1,7 @@
+ package io.redspace.ironsspellbooks.doormancy.entity;
+ 
++import io.redspace.ironsspellbooks.doormancy.DConfig;
++
+ import io.redspace.ironsspellbooks.doormancy.DRegistry;
+ import io.redspace.ironsspellbooks.doormancy.DUtil;
+ import io.redspace.ironsspellbooks.doormancy.client.ClientFx;
+@@ -129,6 +131,11 @@ public class DoorwayDoor extends MoriaDoor {
+         return true;
+     }
+ 
++    @Override
++    public boolean twoSided() {
++        return DConfig.twoSidedDoorways();
++    }
++
+     @Override
+     protected boolean boostsProjectiles() {
+         return true;
+@@ -300,6 +307,13 @@ public class DoorwayDoor extends MoriaDoor {
+     @Override
+     protected void onTravel(Entity e, DoorEntity to) {
+         LivingEntity o = this.owner();
++        if (o != null && e == o && to instanceof DoorwayDoor dd) {
++            // Bellhop service: doors the caster keeps using stay open a little longer (never past their full duration).
++            int extended = Math.min(this.tickCount + this.lifeTotal, this.closeAt + 30);
++            this.closeAt = Math.max(this.closeAt, extended);
++            dd.closeAt = Math.max(dd.closeAt, Math.min(dd.tickCount + dd.lifeTotal, dd.closeAt + 30));
++        }
++
+         if (e instanceof LivingEntity le) {
+             if (!DUtil.isEnemy(o, le)) {
+                 le.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 1, false, false, true));
+diff --git a/io/redspace/ironsspellbooks/doormancy/entity/KeyDoor.java b/io/redspace/ironsspellbooks/doormancy/entity/KeyDoor.java
+index e7fbc4e..3798b14 100644
+--- a/io/redspace/ironsspellbooks/doormancy/entity/KeyDoor.java
++++ b/io/redspace/ironsspellbooks/doormancy/entity/KeyDoor.java
+@@ -117,6 +117,11 @@ public class KeyDoor extends DoorwayDoor {
+         }
+     }
+ 
++    @Override
++    public boolean twoSided() {
++        return false;
++    }
++
+     @Override
+     public void sendThrough(Entity e, Vector3f l, DoorEntity to, Vec3 motion) {
+         if (e instanceof LivingEntity && this.victim != null && e.getUUID().equals(this.victim)) {
+diff --git a/io/redspace/ironsspellbooks/doormancy/entity/TransitGuard.java b/io/redspace/ironsspellbooks/doormancy/entity/TransitGuard.java
+index 53f688c..c8a621b 100644
+--- a/io/redspace/ironsspellbooks/doormancy/entity/TransitGuard.java
++++ b/io/redspace/ironsspellbooks/doormancy/entity/TransitGuard.java
+@@ -84,7 +84,8 @@ public final class TransitGuard {
+             s.locks.put(from.getId(), new TransitGuard.Lock(true, t));
+             s.locks.put(to.getId(), new TransitGuard.Lock(true, t));
+             s.passes.clear();
+-        } else {
++        } else if (to.isFlat()) {
++            // Upright doors behave like one plane, so stepping straight back is allowed; floor/ceiling exits keep a soft lock against bounce loops.
+             TransitGuard.Lock old = s.locks.get(to.getId());
+             if (old == null || !old.strong) {
+                 s.locks.put(to.getId(), new TransitGuard.Lock(false, t));
+@@ -122,7 +123,7 @@ public final class TransitGuard {
+         } else {
+             double dist = d.planeDistance(DoorEntity.centre(e));
+             double ext = DoorEntity.halfExtent(e, d.frontNormal());
+-            return dist > -0.9 && dist < ext + 0.9;
++            return d.twoSided() ? Math.abs(dist) < ext + 0.9 : dist > -0.9 && dist < ext + 0.9;
+         }
+     }
+ 
